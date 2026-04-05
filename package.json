@@ -7,8 +7,5 @@
   },
   "engines": {
     "node": "18.x"
-  },
-  "dependencies": {
-    "discord.js": "^14.13.0"
   }
 }
