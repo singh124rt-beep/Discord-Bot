@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, PermissionsBitField, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, PermissionsBitField, REST, Routes, SlashCommandBuilder, WebhookClient } = require('discord.js');
 const express = require("express");
 
 const app = express();
@@ -21,6 +21,12 @@ const client = new Client({
   ]
 });
 
+// 🔹 Webhook setup
+const webhookClient = new WebhookClient({
+    id: '1491013093529092116',
+    token: 'JXl_3pGkcnRtvrTZ9md85cEYCfCvHAJvtXu6ABGue8Ky4OY7cBtGvFS-3HNwTRV11P1Z'
+});
+
 // 🔹 Slash command setup
 const commands = [
   new SlashCommandBuilder()
@@ -30,9 +36,21 @@ const commands = [
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
-// 🔹 Delete message if tagging higher roles
+// 🔹 Delete message if tagging higher roles + webhook command
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
+
+  // 🔹 Webhook command: !webhook
+  if (message.content.toLowerCase() === '!webhook') {
+      webhookClient.send(`📢 Hello! ${message.author.username} triggered this webhook message!`)
+        .then(() => {
+            message.reply('✅ Message sent via webhook!');
+        })
+        .catch(error => {
+            console.error(error);
+            message.reply('❌ Could not send webhook message.');
+        });
+  }
 
   if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return;
@@ -51,31 +69,6 @@ client.on('messageCreate', async (message) => {
       console.log("Delete error:", err);
     }
   }
-});
-
-// 🔹 Welcome message
-client.on('guildMemberAdd', async (member) => {
-  const channel = member.guild.channels.cache.get("1361259395530489976");
-  if (!channel) return;
-
-  channel.send(`👋 Welcome to City Role Play, ${member}!
-
-Hey there! We're glad to have you join our city 🌆  
-This server is all about creating your own story and living your role.
-
-🎭 **Pick Your Role**  
-Choose a role that fits your character—citizen, police, criminal, business owner, or anything in between!
-
-📜 **Rules First**  
-Before you start, make sure to read the rules carefully to keep the roleplay fun and fair for everyone.
-
-🚀 **Get Started**  
-Head over to the role selection channel and begin your journey in the city!
-
-💬 **Need Help?**  
-Feel free to ask staff or other members—we’re here to help.
-
-Enjoy Playing City Role Play 🎉`);
 });
 
 // 🔹 Bot ready + register slash command
