@@ -43,6 +43,30 @@ client.on('messageCreate', async (message) => {
     }
   }
 });
+client.on('guildMemberAdd', async (member) => {
+  const channel = member.guild.channels.cache.get("PUT_CHANNEL_ID_HERE");
+
+  if (!channel) return;
+
+  channel.send(`👋 Welcome to City Role Play, ${member}!
+
+Hey there! We're glad to have you join our city 🌆  
+This server is all about creating your own story and living your role.
+
+🎭 **Pick Your Role**  
+Choose a role that fits your character—citizen, police, criminal, business owner, or anything in between!
+
+📜 **Rules First**  
+Before you start, make sure to read the rules carefully to keep the roleplay fun and fair for everyone.
+
+🚀 **Get Started**  
+Head over to the role selection channel and begin your journey in the city!
+
+💬 **Need Help?**  
+Feel free to ask staff or other members—we’re here to help.
+
+Enjoy Playing City Role Play 🎉`);
+});
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
