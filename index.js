@@ -44,7 +44,7 @@ client.on('messageCreate', async (message) => {
   }
 });
 client.on('guildMemberAdd', async (member) => {
-  const channel = member.guild.channels.cache.get("1490990503989219378");
+  const channel = member.guild.channels.cache.get("1361259395530489976");
 
   if (!channel) return;
 
