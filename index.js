@@ -1,14 +1,14 @@
-// index.js
-const { Client, GatewayIntentBits } = require('discord.js');
-const express = require("express"); // add Express
+// 
+const express = require("express");
 const app = express();
 
-// Dummy web server to keep Render happy
-app.get("/", (req, res) => res.send("Bot is running!"));
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.get("/", (req, res) => res.send("Bot Alive"));
+app.listen(3000);
 
-// Discord bot code
+
+// 🔽 YOUR EXISTING BOT CODE BELOW
+const { Client, GatewayIntentBits } = require('discord.js');
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
