@@ -36,7 +36,7 @@ const commands = [
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
-// 🔹 Delete message if tagging higher roles + webhook command
+// 🔹 Message handler: role tag deletion + webhook command
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
@@ -52,12 +52,9 @@ client.on('messageCreate', async (message) => {
         });
   }
 
-  if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return;
-  }
+  if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
 
   const mentionedRoles = message.mentions.roles;
-
   const taggedHigher = HIGHER_ROLE_IDS.some(roleId =>
     mentionedRoles.has(roleId)
   );
@@ -83,7 +80,7 @@ client.once('ready', async () => {
   console.log("Slash command registered");
 });
 
-// 🔹 /getinfo command
+// 🔹 /getinfo command (usable by everyone)
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
