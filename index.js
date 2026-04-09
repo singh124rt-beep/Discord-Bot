@@ -1,56 +1,68 @@
-const { Client, GatewayIntentBits, Partials, PermissionsBitField } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require('discord.js');
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages,
-  ],
-  partials: [Partials.Channel],
+  intents: [GatewayIntentBits.Guilds],
 });
 
-const GREETINGS = ['hi', 'hello', 'hey', 'sup', 'howdy', 'hiya'];
+// 🔧 REGISTER COMMANDS
+const commands = [
+  new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('Show help menu'),
 
-client.once('ready', () => {
+  new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('Check bot response'),
+
+  new SlashCommandBuilder()
+    .setName('announce')
+    .setDescription('Send announcement')
+    .addStringOption(option =>
+      option.setName('message')
+        .setDescription('Message to announce')
+        .setRequired(true)
+    ),
+].map(cmd => cmd.toJSON());
+
+client.once('clientReady', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+
+  try {
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+
+    await rest.put(
+      Routes.applicationCommands(client.user.id),
+      { body: commands }
+    );
+
+    console.log('✅ Slash commands registered');
+  } catch (err) {
+    console.error(err);
+  }
 });
 
-// MESSAGE COMMANDS
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
+// 🎯 COMMAND HANDLER
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-  const content = message.content.trim();
-  const lower = content.toLowerCase();
-
-  // Greeting
-  if (GREETINGS.some(g => lower === g || lower.startsWith(g + ' '))) {
-    return message.reply(`Hi ${message.author.username}! 👋`);
+  if (interaction.commandName === 'ping') {
+    await interaction.reply('Pong!');
   }
 
-  // HELP
-  if (lower === '!help') {
-    return message.reply(
-      `**Commands:**\n` +
-      `• hi / hello / hey → greeting\n` +
-      `• !announce <msg> → send announcement\n` +
-      `• !help → show commands`
+  if (interaction.commandName === 'help') {
+    await interaction.reply(
+      '**Commands:**\n' +
+      '/help - show commands\n' +
+      '/ping - test bot\n' +
+      '/announce - send announcement'
     );
   }
 
-  // ANNOUNCE
-  if (lower.startsWith('!announce ')) {
-    if (
-      !message.member.permissions.has(PermissionsBitField.Flags.ManageMessages) &&
-      !message.member.permissions.has(PermissionsBitField.Flags.Administrator)
-    ) {
-      return message.reply('❌ You need Manage Messages permission.');
-    }
+  if (interaction.commandName === 'announce') {
+    const msg = interaction.options.getString('message');
 
-    const msg = content.slice(10);
-    if (!msg) return message.reply('❌ Write a message.');
-
-    return message.channel.send(`📢 ${msg}`);
+    // ✅ NO EMOJI HERE
+    await interaction.reply(msg);
   }
 });
 
