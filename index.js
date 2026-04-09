@@ -1,5 +1,18 @@
-const { Client, GatewayIntentBits } = require('discord.js');
+const express = require('express');
+const { Client, GatewayIntentBits, PermissionsBitField } = require('discord.js');
 
+const app = express();
+
+// ✅ KEEP RENDER ALIVE (PORT FIX)
+app.get('/', (req, res) => {
+  res.send('Bot is running');
+});
+
+app.listen(3000, () => {
+  console.log('🌐 Web server running');
+});
+
+// ✅ DISCORD BOT
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -8,7 +21,7 @@ const client = new Client({
   ],
 });
 
-client.once('clientReady', () => {
+client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
@@ -24,12 +37,10 @@ client.on('messageCreate', async (message) => {
 
   // .help
   if (content === '.help') {
-    return message.reply(`
-📜 Commands:
-.ping - Check bot
-.announce <message> - Send announcement
-.help - Show commands
-    `);
+    return message.reply(`📜 Commands:
+.ping
+.help
+.announce <message>`);
   }
 
   // .announce
@@ -40,12 +51,16 @@ client.on('messageCreate', async (message) => {
       return message.reply('❌ Please provide a message');
     }
 
-    // permission check (optional)
-    if (!message.member.permissions.has('ManageMessages')) {
+    // ✅ FIXED PERMISSION
+    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
       return message.reply('❌ You need Manage Messages permission');
     }
 
-    message.channel.send(msg);
+    try {
+      await message.delete(); // optional clean
+    } catch {}
+
+    message.channel.send(`${msg}`);
   }
 });
 
