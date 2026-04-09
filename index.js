@@ -1,3 +1,4 @@
+// index.js
 const express = require('express');
 const { Client, GatewayIntentBits, PermissionsBitField, REST, Routes, SlashCommandBuilder } = require('discord.js');
 
@@ -17,7 +18,7 @@ const client = new Client({
   ],
 });
 
-// Register slash commands
+// Define slash commands
 const commands = [
   new SlashCommandBuilder().setName('ping').setDescription('Replies with Pong!'),
   new SlashCommandBuilder().setName('help').setDescription('Shows all commands'),
@@ -30,7 +31,7 @@ const commands = [
         .setRequired(true))
 ].map(command => command.toJSON());
 
-// Deploy commands to your server
+// Deploy slash commands
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
 
 client.once('ready', async () => {
@@ -46,7 +47,7 @@ client.once('ready', async () => {
   }
 });
 
-// Handle interactions
+// Handle interactions (slash commands)
 client.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
 
@@ -62,11 +63,13 @@ client.on('interactionCreate', async interaction => {
     }
 
     const msg = interaction.options.getString('message');
-    await interaction.reply({ content: `📢 ${msg}` });
+
+    // Send announcement exactly as typed (no emoji, no username)
+    await interaction.reply({ content: msg });
   }
 });
 
-// Greetings (still for normal messages)
+// Greetings for normal messages
 client.on('messageCreate', message => {
   if (message.author.bot) return;
 
@@ -77,5 +80,5 @@ client.on('messageCreate', message => {
   }
 });
 
-// Login
+// Login using environment variable
 client.login(process.env.DISCORD_BOT_TOKEN);
