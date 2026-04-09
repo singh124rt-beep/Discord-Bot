@@ -1,54 +1,51 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits } = require('discord.js');
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ],
 });
 
-const commands = [
-  new SlashCommandBuilder().setName('help').setDescription('Show help menu'),
-  new SlashCommandBuilder().setName('ping').setDescription('Check bot'),
-  new SlashCommandBuilder()
-    .setName('announce')
-    .setDescription('Send announcement')
-    .addStringOption(option =>
-      option.setName('message')
-        .setDescription('Message to send')
-        .setRequired(true)
-    ),
-].map(cmd => cmd.toJSON());
-
-client.once('clientReady', async () => {
+client.once('clientReady', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-
-  try {
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
-
-    // ✅ REGISTER TO YOUR SERVER (INSTANT)
-    await rest.put(
-      Routes.applicationGuildCommands(client.user.id, "1361179762294390826"),
-      { body: commands }
-    );
-
-    console.log("✅ Slash commands registered instantly");
-  } catch (err) {
-    console.error(err);
-  }
 });
 
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isChatInputCommand()) return;
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
 
-  if (interaction.commandName === 'ping') {
-    await interaction.reply('Pong!');
+  const content = message.content.toLowerCase();
+
+  // .ping
+  if (content === '.ping') {
+    return message.reply('Pong!');
   }
 
-  if (interaction.commandName === 'help') {
-    await interaction.reply('Use /ping, /announce, /help');
+  // .help
+  if (content === '.help') {
+    return message.reply(`
+📜 Commands:
+.ping - Check bot
+.announce <message> - Send announcement
+.help - Show commands
+    `);
   }
 
-  if (interaction.commandName === 'announce') {
-    const msg = interaction.options.getString('message');
-    await interaction.reply(msg); // no emoji
+  // .announce
+  if (content.startsWith('.announce ')) {
+    const msg = message.content.slice(10).trim();
+
+    if (!msg) {
+      return message.reply('❌ Please provide a message');
+    }
+
+    // permission check (optional)
+    if (!message.member.permissions.has('ManageMessages')) {
+      return message.reply('❌ You need Manage Messages permission');
+    }
+
+    message.channel.send(msg);
   }
 });
 
