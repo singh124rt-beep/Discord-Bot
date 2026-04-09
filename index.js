@@ -64,19 +64,22 @@ client.on('interactionCreate', async interaction => {
 
     const msg = interaction.options.getString('message');
 
-    // Send announcement exactly as typed (no emoji, no username)
-    await interaction.reply({ content: msg });
+    // Send announcement as a normal message (hides your username)
+    await interaction.channel.send(msg);
+
+    // Ephemeral reply so Discord does not show "You used /announce"
+    await interaction.reply({ content: '✅ Announcement sent!', ephemeral: true });
   }
 });
 
-// Greetings for normal messages
+// Greetings for normal messages (no username)
 client.on('messageCreate', message => {
   if (message.author.bot) return;
 
   const greetings = ['hi', 'hello', 'hey'];
   const words = message.content.toLowerCase().split(/\s+/);
   if (words.some(word => greetings.includes(word))) {
-    message.channel.send(`Hi, ${message.author.username} 👋 Welcome to CRP`);
+    message.channel.send('Hi 👋 Welcome to CRP');
   }
 });
 
