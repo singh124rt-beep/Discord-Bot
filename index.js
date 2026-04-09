@@ -1,15 +1,18 @@
 const express = require('express');
 const { Client, GatewayIntentBits, PermissionsBitField } = require('discord.js');
 
+// Use Replit's port
+const PORT = process.env.PORT || 3000;
+
 const app = express();
 
-// Keep the web server alive
+// Keep web server alive
 app.get('/', (req, res) => {
   res.send('Bot is running');
 });
 
-app.listen(3000, () => {
-  console.log('🌐 Web server running');
+app.listen(PORT, () => {
+  console.log(`🌐 Web server running on port ${PORT}`);
 });
 
 // Discord bot setup
@@ -63,5 +66,6 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// Login — paste your bot token directly here
-client.login('MTQ4OTkwOTI5MTY0ODU1Mjk3MQ.GJqakx.JPldV3GFEVew5hNhf_M_Y2QxGP-fmPxIza9o5E');
+// === Login ===
+// ⚠️ Replace 'YOUR_BOT_TOKEN_HERE' with your Discord bot token
+client.login('YOUR_BOT_TOKEN_HERE');
