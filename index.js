@@ -1,21 +1,14 @@
 const express = require('express');
 const { Client, GatewayIntentBits, PermissionsBitField } = require('discord.js');
 
-// Use Replit's port
+const app = express();
 const PORT = process.env.PORT || 3000;
 
-const app = express();
-
 // Keep web server alive
-app.get('/', (req, res) => {
-  res.send('Bot is running');
-});
+app.get('/', (req, res) => res.send('Bot is running'));
+app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
 
-app.listen(PORT, () => {
-  console.log(`🌐 Web server running on port ${PORT}`);
-});
-
-// Discord bot setup
+// Discord bot
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -24,9 +17,7 @@ const client = new Client({
   ],
 });
 
-client.once('ready', () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-});
+client.once('ready', () => console.log(`✅ Logged in as ${client.user.tag}`));
 
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
@@ -40,9 +31,7 @@ client.on('messageCreate', async (message) => {
   }
 
   // .ping
-  if (content === '.ping') {
-    return message.reply('Pong!');
-  }
+  if (content === '.ping') return message.reply('Pong!');
 
   // .help
   if (content === '.help') {
@@ -66,6 +55,5 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// === Login ===
-// ⚠️ Replace 'YOUR_BOT_TOKEN_HERE' with your Discord bot token
-client.login('YOUR_BOT_TOKEN_HERE');
+// ✅ Login using environment variable
+client.login(process.env.DISCORD_BOT_TOKEN);
