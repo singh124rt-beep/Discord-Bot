@@ -1,10 +1,10 @@
 const express = require('express');
 const { Client, GatewayIntentBits, PermissionsBitField } = require('discord.js');
-require('dotenv').config();
+require('dotenv').config(); // ✅ Load token from .env
 
 const app = express();
 
-// ✅ Keep web server alive
+// Keep web server alive
 app.get('/', (req, res) => {
   res.send('Bot is running');
 });
@@ -13,7 +13,7 @@ app.listen(3000, () => {
   console.log('🌐 Web server running');
 });
 
-// ✅ Discord bot setup
+// Discord bot setup
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -31,9 +31,9 @@ client.on('messageCreate', async (message) => {
 
   const content = message.content.toLowerCase();
 
-  // ✅ Greetings
+  // Greetings
   const greetings = ['hi', 'hello', 'hey'];
-  if (greetings.includes(content)) {
+  if (greetings.some(g => content.includes(g))) { // ✅ smarter greeting
     return message.channel.send(`Hi, ${message.author.username} 👋 Welcome to CRP`);
   }
 
@@ -64,5 +64,5 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// ✅ Login
+// Login using token from .env
 client.login(process.env.DISCORD_BOT_TOKEN);
