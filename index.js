@@ -15,41 +15,35 @@ const client = new Client({
   ],
 });
 
+// ===== COMMANDS =====
 const commands = [
-  new SlashCommandBuilder()
-    .setName('ping')
-    .setDescription('Replies with Pong!'),
+  new SlashCommandBuilder().setName('ping').setDescription('Replies with Pong!'),
 
-  new SlashCommandBuilder()
-    .setName('help')
-    .setDescription('Shows all commands'),
+  new SlashCommandBuilder().setName('help').setDescription('Show commands'),
 
   new SlashCommandBuilder()
     .setName('announce')
-    .setDescription('Make an announcement')
-    .addStringOption(option => {
-      return option
-        .setName('message')
-        .setDescription('Message to announce')
-        .setRequired(true);
-    })
+    .setDescription('Make announcement')
+    .addStringOption(option =>
+      option.setName('message')
+        .setDescription('Message')
+        .setRequired(true))
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
 
+// ===== READY =====
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   try {
-    await rest.put(
-      Routes.applicationCommands(client.user.id),
-      { body: commands }
-    );
+    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
     console.log('⚡ Commands registered');
   } catch (err) {
     console.error(err);
   }
 });
 
+// ===== SLASH COMMANDS =====
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -62,8 +56,10 @@ client.on('interactionCreate', async interaction => {
   }
 
   if (interaction.commandName === 'announce') {
+
+    // ✅ ONLY allowed users
     const allowedUsers = [
-      '1420063137838923868',
+      '1420063137838923868', // YOU
       '1378368132376297514',
       '1335285604476522529'
     ];
@@ -74,20 +70,8 @@ client.on('interactionCreate', async interaction => {
 
     const msg = interaction.options.getString('message');
 
-    await interaction.channel.send(msg);
-    await interaction.reply({ content: '✅ Sent!', ephemeral: true });
-  }
-});
+    // ✅ Reply FIRST (fixes "not responding")
+    await interaction.reply({ content: '✅ Announcement sent!', ephemeral: true });
 
-client.on('messageCreate', message => {
-  if (message.author.bot) return;
-
-  const greetings = ['hi', 'hello', 'hey'];
-  const words = message.content.toLowerCase().split(/\s+/);
-
-  if (words.some(w => greetings.includes(w))) {
-    message.channel.send('Hi 👋 Welcome to CRP');
-  }
-});
-
-client.login(process.env.DISCORD_BOT_TOKEN);
+    // ✅ Then send message
+    await interaction.channel.send(msg
