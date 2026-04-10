@@ -5,7 +5,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => res.send('Bot is running'));
-app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🌐 Server running on ${PORT}`));
 
 const client = new Client({
   intents: [
@@ -16,34 +16,52 @@ const client = new Client({
 });
 
 // ===== COMMANDS =====
-const commands = [
-  new SlashCommandBuilder().setName('ping').setDescription('Replies with Pong!'),
+const commands = [];
 
-  new SlashCommandBuilder().setName('help').setDescription('Show commands'),
+const ping = new SlashCommandBuilder()
+  .setName('ping')
+  .setDescription('Replies with Pong!');
+commands.push(ping);
 
-  new SlashCommandBuilder()
-    .setName('announce')
-    .setDescription('Make announcement')
-    .addStringOption(option =>
-      option.setName('message')
-        .setDescription('Message')
-        .setRequired(true))
-].map(cmd => cmd.toJSON());
+const help = new SlashCommandBuilder()
+  .setName('help')
+  .setDescription('Show commands');
+commands.push(help);
+
+const announce = new SlashCommandBuilder()
+  .setName('announce')
+  .setDescription('Make announcement');
+
+announce.addStringOption(function(option) {
+  option.setName('message');
+  option.setDescription('Message');
+  option.setRequired(true);
+  return option;
+});
+
+commands.push(announce);
+
+// Convert to JSON
+const commandData = commands.map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
 
 // ===== READY =====
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+
   try {
-    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+    await rest.put(
+      Routes.applicationCommands(client.user.id),
+      { body: commandData }
+    );
     console.log('⚡ Commands registered');
   } catch (err) {
     console.error(err);
   }
 });
 
-// ===== SLASH COMMANDS =====
+// ===== INTERACTIONS =====
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -57,9 +75,8 @@ client.on('interactionCreate', async interaction => {
 
   if (interaction.commandName === 'announce') {
 
-    // ✅ ONLY allowed users
     const allowedUsers = [
-      '1420063137838923868', // YOU
+      '1420063137838923868',
       '1378368132376297514',
       '1335285604476522529'
     ];
@@ -70,8 +87,22 @@ client.on('interactionCreate', async interaction => {
 
     const msg = interaction.options.getString('message');
 
-    // ✅ Reply FIRST (fixes "not responding")
-    await interaction.reply({ content: '✅ Announcement sent!', ephemeral: true });
+    await interaction.reply({ content: '✅ Sent!', ephemeral: true });
+    await interaction.channel.send(msg);
+  }
+});
 
-    // ✅ Then send message
-    await interaction.channel.send(msg
+// ===== GREETINGS =====
+client.on('messageCreate', message => {
+  if (message.author.bot) return;
+
+  const greetings = ['hi', 'hello', 'hey'];
+  const words = message.content.toLowerCase().split(/\s+/);
+
+  if (words.some(w => greetings.includes(w))) {
+    message.channel.send('Hi 👋 Welcome to CRP');
+  }
+});
+
+// ===== LOGIN =====
+client.login(process.env.DISCORD_BOT_TOKEN);
