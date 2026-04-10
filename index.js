@@ -4,7 +4,7 @@ const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Web server (for Render)
+// Web server
 app.get('/', (req, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`🌐 Server running on ${PORT}`));
 
@@ -18,38 +18,18 @@ const client = new Client({
 });
 
 // ===== COMMANDS =====
-const commands = [];
-
-// ping
-commands.push(
+const commands = [
+  new SlashCommandBuilder().setName('ping').setDescription('Pong'),
+  new SlashCommandBuilder().setName('help').setDescription('Show commands'),
   new SlashCommandBuilder()
-    .setName('ping')
-    .setDescription('Replies with Pong!')
-);
-
-// help
-commands.push(
-  new SlashCommandBuilder()
-    .setName('help')
-    .setDescription('Show commands')
-);
-
-// announce
-const announce = new SlashCommandBuilder()
-  .setName('announce')
-  .setDescription('Make announcement');
-
-announce.addStringOption(option =>
-  option
-    .setName('message')
-    .setDescription('Message to send')
-    .setRequired(true)
-);
-
-commands.push(announce);
-
-// Convert commands
-const commandData = commands.map(cmd => cmd.toJSON());
+    .setName('announce')
+    .setDescription('Make announcement')
+    .addStringOption(option =>
+      option.setName('message')
+        .setDescription('Message')
+        .setRequired(true)
+    )
+].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
 
@@ -60,7 +40,7 @@ client.once('ready', async () => {
   try {
     await rest.put(
       Routes.applicationCommands(client.user.id),
-      { body: commandData }
+      { body: commands }
     );
     console.log('⚡ Commands registered');
   } catch (err) {
@@ -68,7 +48,7 @@ client.once('ready', async () => {
   }
 });
 
-// ===== SLASH COMMAND HANDLER =====
+// ===== COMMAND HANDLER =====
 client.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
 
@@ -82,7 +62,6 @@ client.on('interactionCreate', async interaction => {
 
   if (interaction.commandName === 'announce') {
 
-    // ✅ Only allowed users
     const allowedUsers = [
       '1420063137838923868',
       '1378368132376297514',
@@ -95,10 +74,9 @@ client.on('interactionCreate', async interaction => {
 
     const msg = interaction.options.getString('message');
 
-    // ✅ Reply first (fixes "not responding")
+    // Reply first (prevents timeout)
     await interaction.reply({ content: '✅ Announcement sent!', ephemeral: true });
 
-    // ✅ Send message
     if (interaction.channel) {
       await interaction.channel.send(msg);
     }
@@ -110,12 +88,14 @@ client.on('messageCreate', message => {
   if (message.author.bot) return;
 
   const greetings = ['hi', 'hello', 'hey'];
-  const words = message.content.toLowerCase().split(/\s+/);
+  const msg = message.content.toLowerCase();
 
-  if (words.some(w => greetings.includes(w))) {
+  if (greetings.includes(msg)) {
     message.channel.send('Hi 👋 Welcome to CRP');
   }
 });
 
-// ===== LOGIN =====
-client.login(process.env.DISCORD_BOT_TOKEN);
+// ===== LOGIN WITH ERROR DEBUG =====
+client.login(process.env.DISCORD_BOT_TOKEN)
+  .then(() => console.log("🔥 Bot login success"))
+  .catch(err => console.error("❌ Login error:", err));
