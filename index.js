@@ -8,6 +8,11 @@ const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`🌐 Server running on ${PORT}`));
 
+// Check token
+if (!process.env.DISCORD_BOT_TOKEN) {
+  console.error("❌ ERROR: DISCORD_BOT_TOKEN not found!");
+}
+
 // Discord client
 const client = new Client({
   intents: [
@@ -20,7 +25,7 @@ const client = new Client({
 // ===== COMMANDS =====
 const commands = [
   new SlashCommandBuilder().setName('ping').setDescription('Pong'),
-  new SlashCommandBuilder().setName('help').setDescription('Show commands'),
+  new SlashCommandBuilder().setName('help').setDescription('Help menu'),
   new SlashCommandBuilder()
     .setName('announce')
     .setDescription('Make announcement')
@@ -44,7 +49,7 @@ client.once('ready', async () => {
     );
     console.log('⚡ Commands registered');
   } catch (err) {
-    console.error(err);
+    console.error("❌ Command error:", err);
   }
 });
 
@@ -74,7 +79,6 @@ client.on('interactionCreate', async interaction => {
 
     const msg = interaction.options.getString('message');
 
-    // Reply first (prevents timeout)
     await interaction.reply({ content: '✅ Announcement sent!', ephemeral: true });
 
     if (interaction.channel) {
@@ -95,7 +99,10 @@ client.on('messageCreate', message => {
   }
 });
 
-// ===== LOGIN WITH ERROR DEBUG =====
+// ===== LOGIN (DEBUG ENABLED) =====
 client.login(process.env.DISCORD_BOT_TOKEN)
   .then(() => console.log("🔥 Bot login success"))
-  .catch(err => console.error("❌ Login error:", err));
+  .catch(err => {
+    console.error("❌ LOGIN ERROR:");
+    console.error(err);
+  });
