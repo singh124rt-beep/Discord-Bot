@@ -1,6 +1,8 @@
 const express = require('express');
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 
+console.log("🔥 STARTING BOT...");
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -99,7 +101,7 @@ client.on('messageCreate', message => {
   }
 });
 
-// ===== LOGIN (DEBUG ENABLED) =====
+// ===== LOGIN DEBUG =====
 client.login(process.env.DISCORD_BOT_TOKEN)
   .then(() => console.log("🔥 Bot login success"))
   .catch(err => {
