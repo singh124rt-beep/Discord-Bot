@@ -4,9 +4,11 @@ const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Web server (for Render)
 app.get('/', (req, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`🌐 Server running on ${PORT}`));
 
+// Discord client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -18,30 +20,35 @@ const client = new Client({
 // ===== COMMANDS =====
 const commands = [];
 
-const ping = new SlashCommandBuilder()
-  .setName('ping')
-  .setDescription('Replies with Pong!');
-commands.push(ping);
+// ping
+commands.push(
+  new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('Replies with Pong!')
+);
 
-const help = new SlashCommandBuilder()
-  .setName('help')
-  .setDescription('Show commands');
-commands.push(help);
+// help
+commands.push(
+  new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('Show commands')
+);
 
+// announce
 const announce = new SlashCommandBuilder()
   .setName('announce')
   .setDescription('Make announcement');
 
-announce.addStringOption(function(option) {
-  option.setName('message');
-  option.setDescription('Message');
-  option.setRequired(true);
-  return option;
-});
+announce.addStringOption(option =>
+  option
+    .setName('message')
+    .setDescription('Message to send')
+    .setRequired(true)
+);
 
 commands.push(announce);
 
-// Convert to JSON
+// Convert commands
 const commandData = commands.map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
@@ -61,9 +68,9 @@ client.once('ready', async () => {
   }
 });
 
-// ===== INTERACTIONS =====
+// ===== SLASH COMMAND HANDLER =====
 client.on('interactionCreate', async interaction => {
-  if (!interaction.isChatInputCommand()) return;
+  if (!interaction.isCommand()) return;
 
   if (interaction.commandName === 'ping') {
     return interaction.reply('Pong!');
@@ -75,6 +82,7 @@ client.on('interactionCreate', async interaction => {
 
   if (interaction.commandName === 'announce') {
 
+    // ✅ Only allowed users
     const allowedUsers = [
       '1420063137838923868',
       '1378368132376297514',
@@ -87,8 +95,13 @@ client.on('interactionCreate', async interaction => {
 
     const msg = interaction.options.getString('message');
 
-    await interaction.reply({ content: '✅ Sent!', ephemeral: true });
-    await interaction.channel.send(msg);
+    // ✅ Reply first (fixes "not responding")
+    await interaction.reply({ content: '✅ Announcement sent!', ephemeral: true });
+
+    // ✅ Send message
+    if (interaction.channel) {
+      await interaction.channel.send(msg);
+    }
   }
 });
 
