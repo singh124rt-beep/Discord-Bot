@@ -3,19 +3,22 @@ const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require
 
 console.log("🔥 STARTING BOT...");
 
+// ===== CHECK TOKEN (FORCE ERROR) =====
+if (!process.env.DISCORD_BOT_TOKEN) {
+  console.error("❌ FATAL ERROR: DISCORD_BOT_TOKEN NOT FOUND");
+  process.exit(1); // FORCE STOP so error shows
+}
+
+console.log("✅ TOKEN FOUND");
+
+// ===== EXPRESS =====
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Web server
 app.get('/', (req, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`🌐 Server running on ${PORT}`));
 
-// Check token
-if (!process.env.DISCORD_BOT_TOKEN) {
-  console.error("❌ ERROR: DISCORD_BOT_TOKEN not found!");
-}
-
-// Discord client
+// ===== DISCORD CLIENT =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -101,7 +104,7 @@ client.on('messageCreate', message => {
   }
 });
 
-// ===== LOGIN DEBUG =====
+// ===== LOGIN =====
 client.login(process.env.DISCORD_BOT_TOKEN)
   .then(() => console.log("🔥 Bot login success"))
   .catch(err => {
