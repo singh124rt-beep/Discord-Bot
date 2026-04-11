@@ -13,23 +13,28 @@ console.log("🔥 BOT STARTING...");
 // ===== WEB SERVER =====
 const app = express();
 app.get("/", (req, res) => res.send("Bot Alive ✅"));
-app.listen(3000, () => console.log("🌐 Web running"));
+app.listen(process.env.PORT || 3000, () => console.log("🌐 Web running"));
 
 // ===== CLIENT =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
   ]
 });
 
-// ===== ALLOWED USERS =====
+// ===== ALLOWED USERS (SLASH COMMANDS ONLY) =====
 const allowedUsers = [
   "1420063137838923868",
   "1378368132376297514"
 ];
 
-// ===== COMMANDS =====
+// ===== WARN STORAGE =====
+const warns = new Map();
+
+// ===== SLASH COMMANDS =====
 const commands = [
   new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
 
@@ -65,35 +70,49 @@ const commands = [
     .setName("announce")
     .setDescription("Send announcement")
     .addStringOption(opt =>
-      opt.setName("message").setDescription("Message").setRequired(true)
+      opt.setName("message")
+        .setDescription("Message")
+        .setRequired(true)
     )
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
-// ===== READY =====
-client.once("ready", async () => {
-  console.log(`🟢 Logged in as ${client.user.tag}`);
-
+// ===== REGISTER COMMANDS =====
+async function registerCommands(clientId) {
   try {
     await rest.put(
-      Routes.applicationCommands(client.user.id),
+      Routes.applicationCommands(clientId),
       { body: commands }
     );
     console.log("⚡ Slash commands registered");
   } catch (err) {
-    console.error(err);
+    console.error("❌ Command error:", err);
+  }
+}
+
+// ===== READY =====
+client.once("ready", async () => {
+  console.log(`🟢 Logged in as ${client.user.tag}`);
+  await registerCommands(client.user.id);
+});
+
+// ===== GREETING SYSTEM (EVERYONE CAN USE) =====
+client.on("messageCreate", (message) => {
+  if (message.author.bot) return;
+
+  const msg = message.content.toLowerCase().trim();
+
+  if (msg === "hi" || msg === "hello" || msg === "hey") {
+    return message.reply(`👋 Greetings, ${message.author.username} Welcome to CRP`);
   }
 });
 
-// ===== WARN STORAGE =====
-const warns = new Map();
-
-// ===== SLASH HANDLER =====
+// ===== SLASH COMMAND HANDLER (ONLY SELECTED USERS) =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  // 🔐 PERMISSION CHECK
+  // 🔐 ONLY ALLOWED USERS CAN USE COMMANDS
   if (!allowedUsers.includes(interaction.user.id)) {
     return interaction.reply({
       content: "❌ You are not allowed to use this command",
@@ -135,7 +154,7 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     await member.timeout(10 * 60 * 1000, "Timeout command");
-    return interaction.reply(`⏱️ ${member.user.tag} timed out for 10 min`);
+    return interaction.reply(`⏱️ ${member.user.tag} was timed out for 10 min`);
   }
 
   // ===== WARN =====
@@ -159,22 +178,10 @@ client.on("interactionCreate", async (interaction) => {
       ephemeral: true
     });
 
-    interaction.channel.send({
-      embeds: [{
-        title: "📢 Announcement",
-        description: message,
-        color: 0xff0000
-      }]
-    });
+    return interaction.channel.send(
+      `📢 ANNOUNCEMENT\n\n${message}`
+    );
   }
-});
-
-// ===== AUTO WELCOME =====
-client.on("guildMemberAdd", (member) => {
-  const channel = member.guild.channels.cache.find(ch => ch.name === "welcome");
-  if (!channel) return;
-
-  channel.send(`👋 Welcome ${member}, to CRP! 🚀`);
 });
 
 // ===== LOGIN =====
