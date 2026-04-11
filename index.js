@@ -1,113 +1,138 @@
-const express = require('express');
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const express = require("express");
+const {
+  Client,
+  GatewayIntentBits,
+  REST,
+  Routes,
+  SlashCommandBuilder
+} = require("discord.js");
 
 console.log("🔥 STARTING BOT...");
 
-// ===== CHECK TOKEN (FORCE ERROR) =====
+// ================= ENV CHECK =================
 if (!process.env.DISCORD_BOT_TOKEN) {
-  console.error("❌ FATAL ERROR: DISCORD_BOT_TOKEN NOT FOUND");
-  process.exit(1); // FORCE STOP so error shows
+  console.error("❌ DISCORD_BOT_TOKEN NOT FOUND IN ENV");
+  process.exit(1);
 }
 
 console.log("✅ TOKEN FOUND");
 
-// ===== EXPRESS =====
+// ================= EXPRESS (Render keeps alive) =================
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => res.send('Bot is running'));
-app.listen(PORT, () => console.log(`🌐 Server running on ${PORT}`));
+app.get("/", (req, res) => {
+  res.send("🤖 Bot is running!");
+});
 
-// ===== DISCORD CLIENT =====
+app.listen(PORT, () => {
+  console.log(`🌐 Web server running on port ${PORT}`);
+});
+
+// ================= DISCORD CLIENT =================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
-  ],
+  ]
 });
 
-// ===== COMMANDS =====
+// ================= SLASH COMMANDS =================
 const commands = [
-  new SlashCommandBuilder().setName('ping').setDescription('Pong'),
-  new SlashCommandBuilder().setName('help').setDescription('Help menu'),
+  new SlashCommandBuilder().setName("ping").setDescription("Replies Pong!"),
+  new SlashCommandBuilder().setName("help").setDescription("Shows help menu"),
   new SlashCommandBuilder()
-    .setName('announce')
-    .setDescription('Make announcement')
+    .setName("announce")
+    .setDescription("Send announcement")
     .addStringOption(option =>
-      option.setName('message')
-        .setDescription('Message')
+      option.setName("message")
+        .setDescription("Announcement message")
         .setRequired(true)
     )
 ].map(cmd => cmd.toJSON());
 
-const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
-// ===== READY =====
-client.once('ready', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+// ================= READY EVENT =================
+client.once("ready", async () => {
+  console.log(`🟢 Logged in as ${client.user.tag}`);
 
   try {
     await rest.put(
       Routes.applicationCommands(client.user.id),
       { body: commands }
     );
-    console.log('⚡ Commands registered');
+
+    console.log("⚡ Slash commands registered successfully");
   } catch (err) {
-    console.error("❌ Command error:", err);
+    console.error("❌ Failed to register commands:", err);
   }
 });
 
-// ===== COMMAND HANDLER =====
-client.on('interactionCreate', async interaction => {
+// ================= SLASH COMMAND HANDLER =================
+client.on("interactionCreate", async interaction => {
   if (!interaction.isCommand()) return;
 
-  if (interaction.commandName === 'ping') {
-    return interaction.reply('Pong!');
+  if (interaction.commandName === "ping") {
+    return interaction.reply("Pong! 🏓");
   }
 
-  if (interaction.commandName === 'help') {
-    return interaction.reply('/ping\n/help\n/announce');
+  if (interaction.commandName === "help") {
+    return interaction.reply("Commands: /ping /help /announce");
   }
 
-  if (interaction.commandName === 'announce') {
-
+  if (interaction.commandName === "announce") {
     const allowedUsers = [
-      '1420063137838923868',
-      '1378368132376297514',
-      '1335285604476522529'
+      "1420063137838923868",
+      "1378368132376297514",
+      "1335285604476522529"
     ];
 
     if (!allowedUsers.includes(interaction.user.id)) {
-      return interaction.reply({ content: '❌ Not allowed', ephemeral: true });
+      return interaction.reply({
+        content: "❌ You are not allowed to use this command",
+        ephemeral: true
+      });
     }
 
-    const msg = interaction.options.getString('message');
+    const msg = interaction.options.getString("message");
 
-    await interaction.reply({ content: '✅ Announcement sent!', ephemeral: true });
+    await interaction.reply({
+      content: "✅ Announcement sent!",
+      ephemeral: true
+    });
 
-    if (interaction.channel) {
-      await interaction.channel.send(msg);
-    }
+    await interaction.channel.send(msg);
   }
 });
 
-// ===== GREETINGS =====
-client.on('messageCreate', message => {
+// ================= MESSAGE COMMAND =================
+client.on("messageCreate", message => {
   if (message.author.bot) return;
 
-  const greetings = ['hi', 'hello', 'hey'];
   const msg = message.content.toLowerCase();
 
-  if (greetings.includes(msg)) {
-    message.channel.send('Hi 👋 Welcome to CRP');
+  if (msg === "hi" || msg === "hello" || msg === "hey") {
+    message.channel.send("👋 Hello! Welcome to the server!");
   }
 });
 
-// ===== LOGIN =====
+// ================= ERROR HANDLERS =================
+process.on("unhandledRejection", err => {
+  console.error("❌ UNHANDLED REJECTION:", err);
+});
+
+process.on("uncaughtException", err => {
+  console.error("❌ UNCAUGHT EXCEPTION:", err);
+});
+
+// ================= LOGIN =================
+console.log("🚀 Attempting login...");
+
 client.login(process.env.DISCORD_BOT_TOKEN)
-  .then(() => console.log("🔥 Bot login success"))
+  .then(() => console.log("🔥 LOGIN SUCCESS"))
   .catch(err => {
-    console.error("❌ LOGIN ERROR:");
+    console.error("❌ LOGIN FAILED:");
     console.error(err);
   });
