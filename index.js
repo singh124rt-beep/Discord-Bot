@@ -1,74 +1,118 @@
-const express = require("express");
-const {
-  Client,
-  GatewayIntentBits
-} = require("discord.js");
+const express = require('express');
+const { Client, GatewayIntentBits, PermissionsBitField } = require('discord.js');
 
-console.log("🔥 STARTING BOT...");
-
-// ===== EXPRESS SERVER =====
+// ✅ EXPRESS WEB SERVER TO KEEP BOT ALIVE
 const app = express();
-const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Bot is running'));
+app.listen(3000, () => console.log('🌐 Web server running'));
 
-app.get("/", (req, res) => {
-  res.send("Bot is alive ✅");
-});
-
-app.listen(PORT, () => {
-  console.log(`🌐 Server running on port ${PORT}`);
-});
-
-// ===== TOKEN CHECK =====
-if (!process.env.DISCORD_TOKEN) {
-  console.error("❌ DISCORD_TOKEN NOT FOUND");
-  process.exit(1);
-}
-
-console.log("✅ TOKEN FOUND");
-
-// ===== DEBUG TOKEN =====
-console.log("TOKEN LENGTH:", process.env.DISCORD_TOKEN?.length);
-console.log("TOKEN START:", process.env.DISCORD_TOKEN?.slice(0, 10));
-
-// ===== DISCORD CLIENT =====
+// ✅ DISCORD BOT
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
   ],
-  ws: {
-    properties: {
-      browser: "Discord iOS"
+});
+
+client.once('ready', () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+});
+
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+
+  const content = message.content.toLowerCase();
+
+  // --------------------
+  // .ping command
+  // --------------------
+  if (content === '.ping') {
+    return message.reply('Pong!');
+  }
+
+  // --------------------
+  // .help command
+  // --------------------
+  if (content === '.help') {
+    return message.reply(`📜 Commands:
+.ping
+.help
+.announce <message>
+.kick @user <reason>
+.ban @user <reason>
+.warn @user <reason>`);
+  }
+
+  // --------------------
+  // .announce command
+  // --------------------
+  if (content.startsWith('.announce ')) {
+    const msg = message.content.slice(10).trim();
+    if (!msg) return message.reply('❌ Please provide a message');
+
+    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+      return message.reply('❌ You need Manage Messages permission');
+    }
+
+    try { await message.delete(); } catch {}
+    return message.channel.send(`📢 ${msg}`);
+  }
+
+  // --------------------
+  // .kick command
+  // --------------------
+  if (content.startsWith('.kick ')) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
+      return message.reply('❌ You need Kick Members permission');
+    }
+
+    const member = message.mentions.members.first();
+    const reason = message.content.split(' ').slice(2).join(' ') || 'No reason';
+    if (!member) return message.reply('❌ Mention a user to kick');
+
+    try {
+      await member.kick(reason);
+      return message.channel.send(`👢 ${member.user.tag} kicked | Reason: ${reason}`);
+    } catch {
+      return message.reply('❌ Cannot kick this user');
     }
   }
-});
 
-// ===== READY =====
-client.on("ready", () => {
-  console.log(`🟢 Logged in as ${client.user.tag}`);
-});
+  // --------------------
+  // .ban command
+  // --------------------
+  if (content.startsWith('.ban ')) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
+      return message.reply('❌ You need Ban Members permission');
+    }
 
-// ===== ERRORS =====
-client.on("error", err => {
-  console.error("❌ CLIENT ERROR:", err);
-});
+    const member = message.mentions.members.first();
+    const reason = message.content.split(' ').slice(2).join(' ') || 'No reason';
+    if (!member) return message.reply('❌ Mention a user to ban');
 
-process.on("unhandledRejection", err => {
-  console.error("❌ UNHANDLED:", err);
-});
-
-process.on("uncaughtException", err => {
-  console.error("❌ UNCAUGHT:", err);
-});
-
-// ===== LOGIN =====
-(async () => {
-  try {
-    console.log("🚀 Attempting login...");
-    await client.login(process.env.DISCORD_TOKEN);
-    console.log("🔥 LOGIN SUCCESS");
-  } catch (err) {
-    console.error("❌ LOGIN FAILED:", err);
+    try {
+      await member.ban({ reason });
+      return message.channel.send(`🔨 ${member.user.tag} banned | Reason: ${reason}`);
+    } catch {
+      return message.reply('❌ Cannot ban this user');
+    }
   }
-})();
+
+  // --------------------
+  // .warn command
+  // --------------------
+  if (content.startsWith('.warn ')) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+      return message.reply('❌ You need Manage Messages permission');
+    }
+
+    const member = message.mentions.members.first();
+    const reason = message.content.split(' ').slice(2).join(' ') || 'No reason';
+    if (!member) return message.reply('❌ Mention a user to warn');
+
+    return message.channel.send(`⚠️ ${member.user.tag} warned | Reason: ${reason}`);
+  }
+});
+
+client.login(process.env.DISCORD_BOT_TOKEN);
