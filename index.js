@@ -19,16 +19,16 @@ app.listen(PORT, () => {
 });
 
 // ===== TOKEN CHECK =====
-if (!process.env.TOKEN) {
-  console.error("❌ TOKEN NOT FOUND");
+if (!process.env.DISCORD_TOKEN) {
+  console.error("❌ DISCORD_TOKEN NOT FOUND");
   process.exit(1);
 }
 
 console.log("✅ TOKEN FOUND");
 
 // ===== DEBUG TOKEN =====
-console.log("TOKEN LENGTH:", process.env.TOKEN?.length);
-console.log("TOKEN START:", process.env.TOKEN?.slice(0, 10));
+console.log("TOKEN LENGTH:", process.env.DISCORD_TOKEN?.length);
+console.log("TOKEN START:", process.env.DISCORD_TOKEN?.slice(0, 10));
 
 // ===== DISCORD CLIENT =====
 const client = new Client({
@@ -66,7 +66,7 @@ process.on("uncaughtException", err => {
 (async () => {
   try {
     console.log("🚀 Attempting login...");
-    await client.login(process.env.TOKEN);
+    await client.login(process.env.DISCORD_TOKEN);
     console.log("🔥 LOGIN SUCCESS");
   } catch (err) {
     console.error("❌ LOGIN FAILED:", err);
