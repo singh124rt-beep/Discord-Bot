@@ -179,7 +179,7 @@ client.on("interactionCreate", async (interaction) => {
     });
 
     return interaction.channel.send(
-      `📢 ANNOUNCEMENT\n\n${message}`
+      `\n\n${message}`
     );
   }
 });
