@@ -25,14 +25,18 @@ if (!token) {
 
 console.log("✅ TOKEN FOUND");
 
-// ===== CLIENT (FORCE FIX) =====
+// ===== DISCORD CLIENT (FINAL FIXED) =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
   ],
-  makeCache: () => null // 🔥 important fix
+  ws: {
+    properties: {
+      browser: "Discord iOS" // 🔥 forces connection fix
+    }
+  }
 });
 
 // ===== READY =====
@@ -41,8 +45,44 @@ client.on("ready", () => {
 });
 
 // ===== DEBUG =====
-client.on("debug", msg => console.log("DEBUG:", msg));
-client.on("error", err => console.error("ERROR:", err));
+client.on("debug", msg => console.log("🔍 DEBUG:", msg));
+client.on("error", err => console.error("❌ ERROR:", err));
+
+// ===== HEARTBEAT =====
+setInterval(() => {
+  console.log("💓 Bot still running...");
+}, 30000);
+
+// ===== GREETINGS + ANNOUNCE =====
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+
+  const msg = message.content.toLowerCase();
+
+  // greetings
+  if (["hi", "hello", "hey"].includes(msg)) {
+    return message.reply(`👋 Hi, ${message.author.username}! Welcome to CRP.`);
+  }
+
+  // announce
+  if (msg.startsWith(".announce")) {
+
+    const allowedUsers = ["YOUR_ID_HERE"]; // replace with your ID
+
+    if (!allowedUsers.includes(message.author.id)) {
+      return message.reply("❌ Not allowed");
+    }
+
+    const text = message.content.slice(10).trim();
+
+    if (!text) {
+      return message.reply("❌ Give a message");
+    }
+
+    await message.reply("✅ Announcement sent!");
+    message.channel.send(`📢 **ANNOUNCEMENT** 📢\n\n${text}`);
+  }
+});
 
 // ===== LOGIN =====
 (async () => {
