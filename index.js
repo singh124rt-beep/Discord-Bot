@@ -5,7 +5,8 @@ const {
   PermissionsBitField,
   REST,
   Routes,
-  SlashCommandBuilder
+  SlashCommandBuilder,
+  EmbedBuilder
 } = require("discord.js");
 
 console.log("🔥 BOT STARTING...");
@@ -25,7 +26,7 @@ const client = new Client({
   ]
 });
 
-// ===== ALLOWED USERS (SLASH COMMANDS ONLY) =====
+// ===== ALLOWED USERS =====
 const allowedUsers = [
   "1420063137838923868",
   "1378368132376297514"
@@ -97,7 +98,43 @@ client.once("ready", async () => {
   await registerCommands(client.user.id);
 });
 
-// ===== GREETING SYSTEM (EVERYONE CAN USE) =====
+// ===== 🎉 AUTO WELCOME SYSTEM (WITH YOUR BANNER) =====
+client.on("guildMemberAdd", async (member) => {
+
+  const channel = member.guild.channels.cache.get("1493306099317739590");
+  const role = member.guild.roles.cache.get("1366502670788984902");
+
+  if (!channel) return;
+
+  const embed = new EmbedBuilder()
+    .setColor("#00b0f4")
+    .setTitle("🌆 Welcome to City Role Play!")
+    .setDescription(`👋 Hey ${member}!
+
+Welcome to **City Role Play** 🌆  
+Start your journey and create your story!
+
+📜 Follow the rules  
+🎭 Choose your role  
+🚀 Enjoy RP  
+
+Have fun 🎉`)
+    .setThumbnail(member.user.displayAvatarURL())
+
+    // ✅ YOUR IMAGE ADDED
+    .setImage("https://cdn.discordapp.com/attachments/1493306099317739590/1493309044956463224/file_00000000f47c72088b760408f4b93739.png")
+
+    .setFooter({ text: `Member #${member.guild.memberCount}` })
+    .setTimestamp();
+
+  channel.send({ embeds: [embed] });
+
+  if (role) {
+    member.roles.add(role).catch(() => {});
+  }
+});
+
+// ===== GREETING SYSTEM =====
 client.on("messageCreate", (message) => {
   if (message.author.bot) return;
 
@@ -108,11 +145,10 @@ client.on("messageCreate", (message) => {
   }
 });
 
-// ===== SLASH COMMAND HANDLER (ONLY SELECTED USERS) =====
+// ===== SLASH COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  // 🔐 ONLY ALLOWED USERS CAN USE COMMANDS
   if (!allowedUsers.includes(interaction.user.id)) {
     return interaction.reply({
       content: "❌ You are not allowed to use this command",
@@ -122,12 +158,10 @@ client.on("interactionCreate", async (interaction) => {
 
   const member = interaction.options.getMember("user");
 
-  // ===== PING =====
   if (interaction.commandName === "ping") {
     return interaction.reply("🏓 Pong!");
   }
 
-  // ===== KICK =====
   if (interaction.commandName === "kick") {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
       return interaction.reply({ content: "❌ No permission", ephemeral: true });
@@ -137,7 +171,6 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply(`👢 ${member.user.tag} was kicked`);
   }
 
-  // ===== BAN =====
   if (interaction.commandName === "ban") {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
       return interaction.reply({ content: "❌ No permission", ephemeral: true });
@@ -147,7 +180,6 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply(`🔨 ${member.user.tag} was banned`);
   }
 
-  // ===== TIMEOUT =====
   if (interaction.commandName === "timeout") {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
       return interaction.reply({ content: "❌ No permission", ephemeral: true });
@@ -157,7 +189,6 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply(`⏱️ ${member.user.tag} was timed out for 10 min`);
   }
 
-  // ===== WARN =====
   if (interaction.commandName === "warn") {
     const userId = member.id;
 
@@ -169,7 +200,6 @@ client.on("interactionCreate", async (interaction) => {
     );
   }
 
-  // ===== ANNOUNCE =====
   if (interaction.commandName === "announce") {
     const message = interaction.options.getString("message");
 
@@ -178,9 +208,7 @@ client.on("interactionCreate", async (interaction) => {
       ephemeral: true
     });
 
-    return interaction.channel.send(
-      `\n\n${message}`
-    );
+    return interaction.channel.send(`📢 **Announcement**\n\n${message}`);
   }
 });
 
