@@ -98,7 +98,7 @@ client.once("ready", async () => {
   await registerCommands(client.user.id);
 });
 
-// ===== 🎉 AUTO WELCOME SYSTEM (WITH YOUR BANNER) =====
+// ===== 🎉 AUTO WELCOME SYSTEM (PING + EMBED + ROLE) =====
 client.on("guildMemberAdd", async (member) => {
 
   const channel = member.guild.channels.cache.get("1493306099317739590");
@@ -120,15 +120,18 @@ Start your journey and create your story!
 
 Have fun 🎉`)
     .setThumbnail(member.user.displayAvatarURL())
-
-    // ✅ YOUR IMAGE ADDED
     .setImage("https://cdn.discordapp.com/attachments/1493306099317739590/1493309044956463224/file_00000000f47c72088b760408f4b93739.png")
-
     .setFooter({ text: `Member #${member.guild.memberCount}` })
     .setTimestamp();
 
-  channel.send({ embeds: [embed] });
+  // 🔔 SEND WITH PING
+  await channel.send({
+    content: `🎉 Welcome ${member} to the server!`,
+    embeds: [embed],
+    allowedMentions: { parse: ["users"] }
+  });
 
+  // 🎭 AUTO ROLE
   if (role) {
     member.roles.add(role).catch(() => {});
   }
@@ -208,7 +211,7 @@ client.on("interactionCreate", async (interaction) => {
       ephemeral: true
     });
 
-    return interaction.channel.send(`📢 **Announcement**\n\n${message}`);
+    return interaction.channel.send(`\n\n${message}`);
   }
 });
 
