@@ -38,90 +38,68 @@ const warns = new Map();
 // ===== SLASH COMMANDS =====
 const commands = [
 
-  new SlashCommandBuilder()
-    .setName("ping")
-    .setDescription("Check bot status"),
+  new SlashCommandBuilder().setName("ping").setDescription("Check bot status"),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick a user")
     .addUserOption(opt =>
-      opt.setName("user")
-        .setDescription("Select user")
-        .setRequired(true)
+      opt.setName("user").setDescription("Select user").setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban a user")
     .addUserOption(opt =>
-      opt.setName("user")
-        .setDescription("Select user")
-        .setRequired(true)
+      opt.setName("user").setDescription("Select user").setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("timeout")
     .setDescription("Timeout a user")
     .addUserOption(opt =>
-      opt.setName("user")
-        .setDescription("Select user")
-        .setRequired(true)
+      opt.setName("user").setDescription("Select user").setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn a user")
     .addUserOption(opt =>
-      opt.setName("user")
-        .setDescription("Select user")
-        .setRequired(true)
+      opt.setName("user").setDescription("Select user").setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
     .addStringOption(opt =>
-      opt.setName("message")
-        .setDescription("Write your announcement")
-        .setRequired(true)
+      opt.setName("message").setDescription("Write your message").setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("addrole")
     .setDescription("Give role")
     .addUserOption(opt =>
-      opt.setName("user")
-        .setDescription("Select user")
-        .setRequired(true)
+      opt.setName("user").setDescription("Select user").setRequired(true)
     )
     .addRoleOption(opt =>
-      opt.setName("role")
-        .setDescription("Select role")
-        .setRequired(true)
+      opt.setName("role").setDescription("Select role").setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("removerole")
     .setDescription("Remove role")
     .addUserOption(opt =>
-      opt.setName("user")
-        .setDescription("Select user")
-        .setRequired(true)
+      opt.setName("user").setDescription("Select user").setRequired(true)
     )
     .addRoleOption(opt =>
-      opt.setName("role")
-        .setDescription("Select role")
-        .setRequired(true)
+      opt.setName("role").setDescription("Select role").setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("addroles")
     .setDescription("Give multiple roles")
     .addUserOption(opt =>
-      opt.setName("user")
-        .setDescription("Select user")
-        .setRequired(true)
+      opt.setName("user").setDescription("Select user").setRequired(true)
     )
     .addRoleOption(opt => opt.setName("role1").setDescription("Role 1").setRequired(true))
     .addRoleOption(opt => opt.setName("role2").setDescription("Role 2"))
@@ -133,7 +111,7 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
-// ===== REGISTER =====
+// ===== READY =====
 client.once("ready", async () => {
   console.log(`🟢 Logged in as ${client.user.tag}`);
 
@@ -145,7 +123,7 @@ client.once("ready", async () => {
   console.log("⚡ Commands registered");
 });
 
-// ===== WELCOME =====
+// ===== WELCOME SYSTEM =====
 client.on("guildMemberAdd", async (member) => {
 
   const channel = member.guild.channels.cache.get("1493306099317739590");
@@ -171,15 +149,25 @@ Enjoy your RP journey 🚀`)
   if (role) member.roles.add(role).catch(() => {});
 });
 
-// ===== GREETING FIXED (NO DOUBLE REPLY) =====
-client.on("messageCreate", (message) => {
+// ===== GREETING (FIXED NO DOUBLE REPLY) =====
+const greetedUsers = new Set();
+
+client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   const msg = message.content.toLowerCase().trim();
 
-  if (msg === "hi" || msg === "hello" || msg === "hey") {
-    message.reply(`👋 Greetings, ${message.author.username} Welcome to CRP`);
-  }
+  if (!["hi", "hello", "hey"].includes(msg)) return;
+
+  if (greetedUsers.has(message.author.id)) return;
+
+  greetedUsers.add(message.author.id);
+
+  setTimeout(() => {
+    greetedUsers.delete(message.author.id);
+  }, 5000);
+
+  await message.reply(`👋 Greetings, ${message.author.username} Welcome to CRP`);
 });
 
 // ===== COMMAND HANDLER =====
