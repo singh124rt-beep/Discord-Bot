@@ -4,8 +4,7 @@ const {
   GatewayIntentBits,
   REST,
   Routes,
-  SlashCommandBuilder,
-  EmbedBuilder
+  SlashCommandBuilder
 } = require("discord.js");
 
 console.log("🔥 BOT STARTING...");
@@ -32,15 +31,8 @@ if (!process.env.DISCORD_BOT_TOKEN) {
 
 // ===== CLIENT =====
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages
-  ]
+  intents: [GatewayIntentBits.Guilds]
 });
-
-// ===== WARN STORAGE =====
-const warns = new Map();
 
 // ===== COMMANDS =====
 const commands = [
@@ -105,19 +97,21 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
-// ===== READY =====
+// ===== READY (FIXED DEPLOYMENT SAFE) =====
 client.once("ready", async () => {
   console.log(`🟢 Logged in as ${client.user.tag}`);
 
   try {
+    console.log("⚡ Registering commands...");
+
     await rest.put(
-      Routes.applicationCommands(client.user.id),
+      Routes.applicationCommands(client.application.id),
       { body: commands }
     );
 
     console.log("✅ Slash commands registered");
   } catch (err) {
-    console.error("❌ Command register error:", err);
+    console.error("❌ Command error:", err);
   }
 });
 
@@ -127,7 +121,7 @@ client.on("interactionCreate", async (interaction) => {
 
   try {
 
-    // ===== ONLY YOUR USERS CAN USE BOT =====
+    // ===== ONLY YOUR IDS =====
     if (!allowedUsers.includes(interaction.user.id)) {
       return interaction.reply({
         content: "❌ You are not allowed to use this bot",
@@ -135,75 +129,62 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
+    const getUser = interaction.options.getUser("user");
+    const member = getUser
+      ? await interaction.guild.members.fetch(getUser.id).catch(() => null)
+      : null;
+
     if (interaction.commandName === "ping") {
       return interaction.reply("🏓 Pong!");
     }
 
-    const member = interaction.options.getMember("user") || null;
-
-    if (interaction.commandName !== "announce" && interaction.commandName !== "purge" && !member) {
-      return interaction.reply({ content: "❌ User not found", ephemeral: true });
-    }
-
-    // ===== PURGE =====
     if (interaction.commandName === "purge") {
       const amount = interaction.options.getInteger("amount");
-
-      if (amount < 1 || amount > 100) {
-        return interaction.reply({ content: "❌ 1-100 only", ephemeral: true });
-      }
-
       await interaction.channel.bulkDelete(amount, true);
       return interaction.reply({ content: `🧹 Deleted ${amount}`, ephemeral: true });
     }
 
-    // ===== KICK =====
+    if (!member && interaction.commandName !== "announce") {
+      return interaction.reply({ content: "❌ User not found", ephemeral: true });
+    }
+
     if (interaction.commandName === "kick") {
       await member.kick();
-      return interaction.reply(`👢 ${member.user.tag} kicked`);
+      return interaction.reply(`👢 Kicked`);
     }
 
-    // ===== BAN =====
     if (interaction.commandName === "ban") {
       await member.ban();
-      return interaction.reply(`🔨 ${member.user.tag} banned`);
+      return interaction.reply(`🔨 Banned`);
     }
 
-    // ===== TIMEOUT =====
     if (interaction.commandName === "timeout") {
       await member.timeout(10 * 60 * 1000);
-      return interaction.reply(`⏱️ Timeout done`);
+      return interaction.reply(`⏱️ Timeout`);
     }
 
-    // ===== WARN =====
     if (interaction.commandName === "warn") {
-      const id = member.id;
-      warns.set(id, (warns.get(id) || 0) + 1);
-      return interaction.reply(`⚠️ Warned (${warns.get(id)})`);
+      return interaction.reply(`⚠️ Warned`);
     }
 
-    // ===== ANNOUNCE =====
     if (interaction.commandName === "announce") {
       const msg = interaction.options.getString("message");
       await interaction.reply({ content: "✅ Sent", ephemeral: true });
       return interaction.channel.send(msg);
     }
 
-    // ===== ADD ROLE =====
     if (interaction.commandName === "addrole") {
       const role = interaction.options.getRole("role");
       await member.roles.add(role);
-      return interaction.reply(`✅ Role added`);
+      return interaction.reply("✅ Role added");
     }
 
-    // ===== REMOVE ROLE =====
     if (interaction.commandName === "removerole") {
       const role = interaction.options.getRole("role");
       await member.roles.remove(role);
-      return interaction.reply(`❌ Role removed`);
+      return interaction.reply("❌ Role removed");
     }
 
-    // ===== MULTI ROLE =====
     if (interaction.commandName === "addroles") {
       const roles = [
         interaction.options.getRole("role1"),
