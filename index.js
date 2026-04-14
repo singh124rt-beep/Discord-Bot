@@ -43,84 +43,49 @@ const commands = [
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick a user")
-    .addUserOption(opt =>
-      opt.setName("user").setDescription("User").setRequired(true)
-    ),
+    .addUserOption(opt => opt.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban a user")
-    .addUserOption(opt =>
-      opt.setName("user").setDescription("User").setRequired(true)
-    ),
+    .addUserOption(opt => opt.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
     .setDescription("Timeout a user")
-    .addUserOption(opt =>
-      opt.setName("user").setDescription("User").setRequired(true)
-    ),
+    .addUserOption(opt => opt.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn a user")
-    .addUserOption(opt =>
-      opt.setName("user").setDescription("User").setRequired(true)
-    ),
+    .addUserOption(opt => opt.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(opt =>
-      opt.setName("message")
-        .setDescription("Message")
-        .setRequired(true)
-    ),
+    .addStringOption(opt => opt.setName("message").setRequired(true)),
 
-  // 🔥 ADD SINGLE ROLE
   new SlashCommandBuilder()
     .setName("addrole")
-    .setDescription("Give role to user")
-    .addUserOption(opt =>
-      opt.setName("user").setDescription("User").setRequired(true)
-    )
-    .addRoleOption(opt =>
-      opt.setName("role").setDescription("Role").setRequired(true)
-    ),
+    .setDescription("Give role")
+    .addUserOption(opt => opt.setName("user").setRequired(true))
+    .addRoleOption(opt => opt.setName("role").setRequired(true)),
 
-  // 🔥 REMOVE ROLE
   new SlashCommandBuilder()
     .setName("removerole")
-    .setDescription("Remove role from user")
-    .addUserOption(opt =>
-      opt.setName("user").setDescription("User").setRequired(true)
-    )
-    .addRoleOption(opt =>
-      opt.setName("role").setDescription("Role").setRequired(true)
-    ),
+    .setDescription("Remove role")
+    .addUserOption(opt => opt.setName("user").setRequired(true))
+    .addRoleOption(opt => opt.setName("role").setRequired(true)),
 
-  // 🔥 MULTIPLE ROLES
   new SlashCommandBuilder()
     .setName("addroles")
     .setDescription("Give multiple roles")
-    .addUserOption(opt =>
-      opt.setName("user").setDescription("User").setRequired(true)
-    )
-    .addRoleOption(opt =>
-      opt.setName("role1").setDescription("Role 1").setRequired(true)
-    )
-    .addRoleOption(opt =>
-      opt.setName("role2").setDescription("Role 2").setRequired(false)
-    )
-    .addRoleOption(opt =>
-      opt.setName("role3").setDescription("Role 3").setRequired(false)
-    )
-    .addRoleOption(opt =>
-      opt.setName("role4").setDescription("Role 4").setRequired(false)
-    )
-    .addRoleOption(opt =>
-      opt.setName("role5").setDescription("Role 5").setRequired(false)
-    )
+    .addUserOption(opt => opt.setName("user").setRequired(true))
+    .addRoleOption(opt => opt.setName("role1").setRequired(true))
+    .addRoleOption(opt => opt.setName("role2"))
+    .addRoleOption(opt => opt.setName("role3"))
+    .addRoleOption(opt => opt.setName("role4"))
+    .addRoleOption(opt => opt.setName("role5"))
 
 ].map(cmd => cmd.toJSON());
 
@@ -128,10 +93,7 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
 // ===== REGISTER =====
 async function registerCommands(clientId) {
-  await rest.put(
-    Routes.applicationCommands(clientId),
-    { body: commands }
-  );
+  await rest.put(Routes.applicationCommands(clientId), { body: commands });
   console.log("⚡ Commands registered");
 }
 
@@ -170,14 +132,16 @@ Enjoy your RP journey 🚀`)
   if (role) member.roles.add(role).catch(() => {});
 });
 
-// ===== GREETING =====
+// ===== GREETING (FIXED) =====
 client.on("messageCreate", (message) => {
   if (message.author.bot) return;
 
-  const msg = message.content.toLowerCase();
+  const msg = message.content.toLowerCase().trim();
 
-  if (["hi", "hello", "hey"].includes(msg)) {
-    message.reply(`👋 Welcome ${message.author.username}`);
+  if (msg === "hi" || msg === "hello" || msg === "hey") {
+    return message.reply(
+      `👋 Greetings, ${message.author.username} Welcome to CRP`
+    );
   }
 });
 
@@ -190,6 +154,10 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   const member = interaction.options.getMember("user");
+
+  if (!member) {
+    return interaction.reply({ content: "❌ User not found", ephemeral: true });
+  }
 
   if (interaction.commandName === "ping") {
     return interaction.reply("🏓 Pong!");
@@ -225,32 +193,30 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.commandName === "addrole") {
     const role = interaction.options.getRole("role");
     await member.roles.add(role);
-    return interaction.reply(`✅ Role ${role.name} given to ${member.user.tag}`);
+    return interaction.reply(`✅ Role ${role.name} given`);
   }
 
   if (interaction.commandName === "removerole") {
     const role = interaction.options.getRole("role");
     await member.roles.remove(role);
-    return interaction.reply(`❌ Role ${role.name} removed from ${member.user.tag}`);
+    return interaction.reply(`❌ Role ${role.name} removed`);
   }
 
-  // 🔥 MULTI ROLE HANDLER
   if (interaction.commandName === "addroles") {
-
     const roles = [
       interaction.options.getRole("role1"),
       interaction.options.getRole("role2"),
       interaction.options.getRole("role3"),
       interaction.options.getRole("role4"),
       interaction.options.getRole("role5")
-    ].filter(r => r !== null);
+    ].filter(r => r);
 
     try {
       for (const role of roles) {
         await member.roles.add(role);
       }
 
-      return interaction.reply(`✅ Added ${roles.length} roles to ${member.user.tag}`);
+      return interaction.reply(`✅ ${roles.length} roles added`);
     } catch (err) {
       console.error(err);
       return interaction.reply({
