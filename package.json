@@ -1,7 +1,7 @@
 {
-  "name": "discord-bot",
+  "name": "crp-bot",
   "version": "1.0.0",
-  "description": "CRP Bot",
+  "description": "City Role Play Bot",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
