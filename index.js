@@ -9,30 +9,36 @@ const {
 
 console.log("🔥 BOT STARTING...");
 
-// ===== ALLOWED USERS ONLY =====
-const allowedUsers = [
-  "1420063137838923868",
-  "1378368132376297514",
-  "1335285604476522529"
-];
-
 // ===== KEEP ALIVE SERVER =====
 const app = express();
-app.get("/", (req, res) => res.send("Bot Alive ✅"));
-app.listen(process.env.PORT || 3000, () => {
+
+app.get("/", (req, res) => {
+  res.send("Bot Alive ✅");
+});
+
+app.listen(3000, () => {
   console.log("🌐 Web server running");
 });
 
 // ===== TOKEN CHECK =====
 if (!process.env.DISCORD_BOT_TOKEN) {
-  console.log("❌ DISCORD_BOT_TOKEN missing");
+  console.log("❌ DISCORD_BOT_TOKEN MISSING");
   process.exit(1);
 }
+
+console.log("TOKEN CHECK:", process.env.DISCORD_BOT_TOKEN ? "FOUND" : "MISSING");
 
 // ===== CLIENT =====
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
+
+// ===== ONLY YOUR IDs =====
+const allowedUsers = [
+  "1420063137838923868",
+  "1378368132376297514",
+  "1335285604476522529"
+];
 
 // ===== COMMANDS =====
 const commands = [
@@ -49,43 +55,6 @@ const commands = [
     .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
-    .setName("timeout")
-    .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("warn")
-    .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("announce")
-    .setDescription("Send message")
-    .addStringOption(o => o.setName("message").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("addrole")
-    .setDescription("Give role")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addRoleOption(o => o.setName("role").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("removerole")
-    .setDescription("Remove role")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addRoleOption(o => o.setName("role").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("addroles")
-    .setDescription("Give multiple roles")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setRequired(true))
-    .addRoleOption(o => o.setName("role2"))
-    .addRoleOption(o => o.setName("role3"))
-    .addRoleOption(o => o.setName("role4"))
-    .addRoleOption(o => o.setName("role5")),
-
-  new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
     .addIntegerOption(o =>
@@ -97,13 +66,11 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
-// ===== READY (FIXED DEPLOYMENT SAFE) =====
+// ===== READY =====
 client.once("ready", async () => {
   console.log(`🟢 Logged in as ${client.user.tag}`);
 
   try {
-    console.log("⚡ Registering commands...");
-
     await rest.put(
       Routes.applicationCommands(client.application.id),
       { body: commands }
@@ -111,7 +78,7 @@ client.once("ready", async () => {
 
     console.log("✅ Slash commands registered");
   } catch (err) {
-    console.error("❌ Command error:", err);
+    console.error("❌ Slash command error:", err);
   }
 });
 
@@ -121,7 +88,7 @@ client.on("interactionCreate", async (interaction) => {
 
   try {
 
-    // ===== ONLY YOUR IDS =====
+    // ===== ONLY ALLOWED USERS =====
     if (!allowedUsers.includes(interaction.user.id)) {
       return interaction.reply({
         content: "❌ You are not allowed to use this bot",
@@ -129,84 +96,49 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    const getUser = interaction.options.getUser("user");
-    const member = getUser
-      ? await interaction.guild.members.fetch(getUser.id).catch(() => null)
-      : null;
-
     if (interaction.commandName === "ping") {
       return interaction.reply("🏓 Pong!");
     }
 
     if (interaction.commandName === "purge") {
       const amount = interaction.options.getInteger("amount");
+
+      if (amount < 1 || amount > 100) {
+        return interaction.reply({ content: "❌ 1-100 only", ephemeral: true });
+      }
+
       await interaction.channel.bulkDelete(amount, true);
       return interaction.reply({ content: `🧹 Deleted ${amount}`, ephemeral: true });
     }
 
-    if (!member && interaction.commandName !== "announce") {
+    const member = interaction.options.getMember("user");
+
+    if (!member && interaction.commandName !== "ping") {
       return interaction.reply({ content: "❌ User not found", ephemeral: true });
     }
 
     if (interaction.commandName === "kick") {
       await member.kick();
-      return interaction.reply(`👢 Kicked`);
+      return interaction.reply("👢 Kicked user");
     }
 
     if (interaction.commandName === "ban") {
       await member.ban();
-      return interaction.reply(`🔨 Banned`);
-    }
-
-    if (interaction.commandName === "timeout") {
-      await member.timeout(10 * 60 * 1000);
-      return interaction.reply(`⏱️ Timeout`);
-    }
-
-    if (interaction.commandName === "warn") {
-      return interaction.reply(`⚠️ Warned`);
-    }
-
-    if (interaction.commandName === "announce") {
-      const msg = interaction.options.getString("message");
-      await interaction.reply({ content: "✅ Sent", ephemeral: true });
-      return interaction.channel.send(msg);
-    }
-
-    if (interaction.commandName === "addrole") {
-      const role = interaction.options.getRole("role");
-      await member.roles.add(role);
-      return interaction.reply("✅ Role added");
-    }
-
-    if (interaction.commandName === "removerole") {
-      const role = interaction.options.getRole("role");
-      await member.roles.remove(role);
-      return interaction.reply("❌ Role removed");
-    }
-
-    if (interaction.commandName === "addroles") {
-      const roles = [
-        interaction.options.getRole("role1"),
-        interaction.options.getRole("role2"),
-        interaction.options.getRole("role3"),
-        interaction.options.getRole("role4"),
-        interaction.options.getRole("role5")
-      ].filter(Boolean);
-
-      for (const r of roles) await member.roles.add(r);
-
-      return interaction.reply(`✅ Roles added`);
+      return interaction.reply("🔨 Banned user");
     }
 
   } catch (err) {
     console.error(err);
     return interaction.reply({
-      content: "❌ Error",
+      content: "❌ Error occurred",
       ephemeral: true
     });
   }
 });
 
 // ===== LOGIN =====
-client.login(process.env.DISCORD_BOT_TOKEN);
+try {
+  client.login(process.env.DISCORD_TOKEN);
+} catch (err) {
+  console.error("LOGIN ERROR:", err);
+  }
