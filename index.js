@@ -37,6 +37,7 @@ const warns = new Map();
 
 // ===== SLASH COMMANDS =====
 const commands = [
+
   new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
 
   new SlashCommandBuilder()
@@ -74,22 +75,41 @@ const commands = [
       opt.setName("message")
         .setDescription("Message")
         .setRequired(true)
+    ),
+
+  // 🔥 ADD ROLE
+  new SlashCommandBuilder()
+    .setName("addrole")
+    .setDescription("Give role to user")
+    .addUserOption(opt =>
+      opt.setName("user").setDescription("User").setRequired(true)
     )
+    .addRoleOption(opt =>
+      opt.setName("role").setDescription("Role").setRequired(true)
+    ),
+
+  // 🔥 REMOVE ROLE
+  new SlashCommandBuilder()
+    .setName("removerole")
+    .setDescription("Remove role from user")
+    .addUserOption(opt =>
+      opt.setName("user").setDescription("User").setRequired(true)
+    )
+    .addRoleOption(opt =>
+      opt.setName("role").setDescription("Role").setRequired(true)
+    )
+
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
-// ===== REGISTER COMMANDS =====
+// ===== REGISTER =====
 async function registerCommands(clientId) {
-  try {
-    await rest.put(
-      Routes.applicationCommands(clientId),
-      { body: commands }
-    );
-    console.log("⚡ Slash commands registered");
-  } catch (err) {
-    console.error("❌ Command error:", err);
-  }
+  await rest.put(
+    Routes.applicationCommands(clientId),
+    { body: commands }
+  );
+  console.log("⚡ Commands registered");
 }
 
 // ===== READY =====
@@ -98,7 +118,7 @@ client.once("ready", async () => {
   await registerCommands(client.user.id);
 });
 
-// ===== 🎉 AUTO WELCOME SYSTEM (PING + EMBED + ROLE) =====
+// ===== WELCOME =====
 client.on("guildMemberAdd", async (member) => {
 
   const channel = member.guild.channels.cache.get("1493306099317739590");
@@ -109,54 +129,41 @@ client.on("guildMemberAdd", async (member) => {
   const embed = new EmbedBuilder()
     .setColor("#00b0f4")
     .setTitle("🌆 Welcome to City Role Play!")
-    .setDescription(`👋 Hey ${member}!
+    .setDescription(`👋 Hey <@${member.id}>!
 
 Welcome to **City Role Play** 🌆  
-Start your journey and create your story!
-
-📜 Follow the rules  
-🎭 Choose your role  
-🚀 Enjoy RP  
-
-Have fun 🎉`)
+Enjoy your RP journey 🚀`)
     .setThumbnail(member.user.displayAvatarURL())
     .setImage("https://cdn.discordapp.com/attachments/1493306099317739590/1493309044956463224/file_00000000f47c72088b760408f4b93739.png")
     .setFooter({ text: `Member #${member.guild.memberCount}` })
     .setTimestamp();
 
-  // 🔔 SEND WITH PING
   await channel.send({
-    content: `🎉 Welcome ${member} to the server!`,
+    content: `🎉 Welcome <@${member.id}>!`,
     embeds: [embed],
-    allowedMentions: { parse: ["users"] }
+    allowedMentions: { users: [member.id] }
   });
 
-  // 🎭 AUTO ROLE
-  if (role) {
-    member.roles.add(role).catch(() => {});
-  }
+  if (role) member.roles.add(role).catch(() => {});
 });
 
-// ===== GREETING SYSTEM =====
+// ===== GREETING =====
 client.on("messageCreate", (message) => {
   if (message.author.bot) return;
 
-  const msg = message.content.toLowerCase().trim();
+  const msg = message.content.toLowerCase();
 
-  if (msg === "hi" || msg === "hello" || msg === "hey") {
-    return message.reply(`👋 Greetings, ${message.author.username} Welcome to CRP`);
+  if (["hi", "hello", "hey"].includes(msg)) {
+    message.reply(`👋 Welcome ${message.author.username}`);
   }
 });
 
-// ===== SLASH COMMAND HANDLER =====
+// ===== COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   if (!allowedUsers.includes(interaction.user.id)) {
-    return interaction.reply({
-      content: "❌ You are not allowed to use this command",
-      ephemeral: true
-    });
+    return interaction.reply({ content: "❌ Not allowed", ephemeral: true });
   }
 
   const member = interaction.options.getMember("user");
@@ -166,52 +173,46 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   if (interaction.commandName === "kick") {
-    if (!interaction.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
-      return interaction.reply({ content: "❌ No permission", ephemeral: true });
-    }
-
     await member.kick();
-    return interaction.reply(`👢 ${member.user.tag} was kicked`);
+    return interaction.reply(`👢 ${member.user.tag} kicked`);
   }
 
   if (interaction.commandName === "ban") {
-    if (!interaction.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
-      return interaction.reply({ content: "❌ No permission", ephemeral: true });
-    }
-
     await member.ban();
-    return interaction.reply(`🔨 ${member.user.tag} was banned`);
+    return interaction.reply(`🔨 ${member.user.tag} banned`);
   }
 
   if (interaction.commandName === "timeout") {
-    if (!interaction.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-      return interaction.reply({ content: "❌ No permission", ephemeral: true });
-    }
-
-    await member.timeout(10 * 60 * 1000, "Timeout command");
-    return interaction.reply(`⏱️ ${member.user.tag} was timed out for 10 min`);
+    await member.timeout(10 * 60 * 1000);
+    return interaction.reply(`⏱️ Timeout applied`);
   }
 
   if (interaction.commandName === "warn") {
-    const userId = member.id;
-
-    if (!warns.has(userId)) warns.set(userId, 0);
-    warns.set(userId, warns.get(userId) + 1);
-
-    return interaction.reply(
-      `⚠️ ${member.user.tag} warned. Total warns: ${warns.get(userId)}`
-    );
+    const id = member.id;
+    warns.set(id, (warns.get(id) || 0) + 1);
+    return interaction.reply(`⚠️ Warned (${warns.get(id)})`);
   }
 
   if (interaction.commandName === "announce") {
-    const message = interaction.options.getString("message");
+    const msg = interaction.options.getString("message");
+    await interaction.reply({ content: "✅ Sent", ephemeral: true });
+    return interaction.channel.send(`\n\n${msg}`);
+  }
 
-    await interaction.reply({
-      content: "✅ Announcement sent!",
-      ephemeral: true
-    });
+  // 🔥 ADD ROLE
+  if (interaction.commandName === "addrole") {
+    const role = interaction.options.getRole("role");
 
-    return interaction.channel.send(`\n\n${message}`);
+    await member.roles.add(role);
+    return interaction.reply(`✅ Role ${role.name} given to ${member.user.tag}`);
+  }
+
+  // 🔥 REMOVE ROLE
+  if (interaction.commandName === "removerole") {
+    const role = interaction.options.getRole("role");
+
+    await member.roles.remove(role);
+    return interaction.reply(`❌ Role ${role.name} removed from ${member.user.tag}`);
   }
 });
 
