@@ -77,7 +77,7 @@ const commands = [
         .setRequired(true)
     ),
 
-  // 🔥 ADD ROLE
+  // 🔥 ADD SINGLE ROLE
   new SlashCommandBuilder()
     .setName("addrole")
     .setDescription("Give role to user")
@@ -97,6 +97,29 @@ const commands = [
     )
     .addRoleOption(opt =>
       opt.setName("role").setDescription("Role").setRequired(true)
+    ),
+
+  // 🔥 MULTIPLE ROLES
+  new SlashCommandBuilder()
+    .setName("addroles")
+    .setDescription("Give multiple roles")
+    .addUserOption(opt =>
+      opt.setName("user").setDescription("User").setRequired(true)
+    )
+    .addRoleOption(opt =>
+      opt.setName("role1").setDescription("Role 1").setRequired(true)
+    )
+    .addRoleOption(opt =>
+      opt.setName("role2").setDescription("Role 2").setRequired(false)
+    )
+    .addRoleOption(opt =>
+      opt.setName("role3").setDescription("Role 3").setRequired(false)
+    )
+    .addRoleOption(opt =>
+      opt.setName("role4").setDescription("Role 4").setRequired(false)
+    )
+    .addRoleOption(opt =>
+      opt.setName("role5").setDescription("Role 5").setRequired(false)
     )
 
 ].map(cmd => cmd.toJSON());
@@ -199,21 +222,44 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.channel.send(`\n\n${msg}`);
   }
 
-  // 🔥 ADD ROLE
   if (interaction.commandName === "addrole") {
     const role = interaction.options.getRole("role");
-
     await member.roles.add(role);
     return interaction.reply(`✅ Role ${role.name} given to ${member.user.tag}`);
   }
 
-  // 🔥 REMOVE ROLE
   if (interaction.commandName === "removerole") {
     const role = interaction.options.getRole("role");
-
     await member.roles.remove(role);
     return interaction.reply(`❌ Role ${role.name} removed from ${member.user.tag}`);
   }
+
+  // 🔥 MULTI ROLE HANDLER
+  if (interaction.commandName === "addroles") {
+
+    const roles = [
+      interaction.options.getRole("role1"),
+      interaction.options.getRole("role2"),
+      interaction.options.getRole("role3"),
+      interaction.options.getRole("role4"),
+      interaction.options.getRole("role5")
+    ].filter(r => r !== null);
+
+    try {
+      for (const role of roles) {
+        await member.roles.add(role);
+      }
+
+      return interaction.reply(`✅ Added ${roles.length} roles to ${member.user.tag}`);
+    } catch (err) {
+      console.error(err);
+      return interaction.reply({
+        content: "❌ Failed to add roles",
+        ephemeral: true
+      });
+    }
+  }
+
 });
 
 // ===== LOGIN =====
