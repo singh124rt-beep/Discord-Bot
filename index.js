@@ -2,7 +2,6 @@ const express = require("express");
 const {
   Client,
   GatewayIntentBits,
-  PermissionsBitField,
   REST,
   Routes,
   SlashCommandBuilder,
@@ -43,68 +42,66 @@ const client = new Client({
 // ===== WARN STORAGE =====
 const warns = new Map();
 
-// ===== SLASH COMMANDS =====
+// ===== COMMANDS =====
 const commands = [
-
   new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick a user")
-    .addUserOption(opt => opt.setName("user").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban a user")
-    .addUserOption(opt => opt.setName("user").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
-    .setDescription("Timeout a user")
-    .addUserOption(opt => opt.setName("user").setRequired(true)),
+    .setDescription("Timeout user")
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("warn")
-    .setDescription("Warn a user")
-    .addUserOption(opt => opt.setName("user").setRequired(true)),
+    .setDescription("Warn user")
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("announce")
-    .setDescription("Send announcement")
-    .addStringOption(opt => opt.setName("message").setRequired(true)),
+    .setDescription("Send message")
+    .addStringOption(o => o.setName("message").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("addrole")
     .setDescription("Give role")
-    .addUserOption(opt => opt.setName("user").setRequired(true))
-    .addRoleOption(opt => opt.setName("role").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addRoleOption(o => o.setName("role").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("removerole")
     .setDescription("Remove role")
-    .addUserOption(opt => opt.setName("user").setRequired(true))
-    .addRoleOption(opt => opt.setName("role").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addRoleOption(o => o.setName("role").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("addroles")
     .setDescription("Give multiple roles")
-    .addUserOption(opt => opt.setName("user").setRequired(true))
-    .addRoleOption(opt => opt.setName("role1").setRequired(true))
-    .addRoleOption(opt => opt.setName("role2"))
-    .addRoleOption(opt => opt.setName("role3"))
-    .addRoleOption(opt => opt.setName("role4"))
-    .addRoleOption(opt => opt.setName("role5")),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addRoleOption(o => o.setName("role1").setRequired(true))
+    .addRoleOption(o => o.setName("role2"))
+    .addRoleOption(o => o.setName("role3"))
+    .addRoleOption(o => o.setName("role4"))
+    .addRoleOption(o => o.setName("role5")),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(opt =>
-      opt.setName("amount")
+    .addIntegerOption(o =>
+      o.setName("amount")
         .setDescription("1-100")
         .setRequired(true)
     )
-
-].map(cmd => cmd.toJSON());
+].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
@@ -112,41 +109,16 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN)
 client.once("ready", async () => {
   console.log(`🟢 Logged in as ${client.user.tag}`);
 
-  await rest.put(
-    Routes.applicationCommands(client.user.id),
-    { body: commands }
-  );
+  try {
+    await rest.put(
+      Routes.applicationCommands(client.user.id),
+      { body: commands }
+    );
 
-  console.log("⚡ Commands registered");
-});
-
-// ===== AUTO WELCOME =====
-client.on("guildMemberAdd", async (member) => {
-
-  const channel = member.guild.channels.cache.get("1493306099317739590");
-  const role = member.guild.roles.cache.get("1366502670788984902");
-
-  if (!channel) return;
-
-  const embed = new EmbedBuilder()
-    .setColor("#00b0f4")
-    .setTitle("🌆 Welcome to City Role Play!")
-    .setDescription(`👋 Hey <@${member.id}>!
-
-Welcome to **City Role Play** 🌆  
-Enjoy your RP journey 🚀`)
-    .setThumbnail(member.user.displayAvatarURL())
-    .setImage("https://cdn.discordapp.com/attachments/1493306099317739590/1493309044956463224/file_00000000f47c72088b760408f4b93739.png")
-    .setFooter({ text: `Member #${member.guild.memberCount}` })
-    .setTimestamp();
-
-  await channel.send({
-    content: `🎉 Welcome <@${member.id}>!`,
-    embeds: [embed],
-    allowedMentions: { users: [member.id] }
-  });
-
-  if (role) member.roles.add(role).catch(() => {});
+    console.log("✅ Slash commands registered");
+  } catch (err) {
+    console.error("❌ Command register error:", err);
+  }
 });
 
 // ===== COMMAND HANDLER =====
@@ -155,31 +127,22 @@ client.on("interactionCreate", async (interaction) => {
 
   try {
 
-    if (interaction.commandName === "ping") {
-      return interaction.reply("🏓 Pong!");
-    }
-
-    // ===== ONLY YOUR IDS CAN USE BOT =====
-    const isAllowed = allowedUsers.includes(interaction.user.id);
-
-    if (!isAllowed) {
+    // ===== ONLY YOUR USERS CAN USE BOT =====
+    if (!allowedUsers.includes(interaction.user.id)) {
       return interaction.reply({
         content: "❌ You are not allowed to use this bot",
         ephemeral: true
       });
     }
 
-    const member = interaction.options.getMember("user");
+    if (interaction.commandName === "ping") {
+      return interaction.reply("🏓 Pong!");
+    }
 
-    if (
-      interaction.commandName !== "announce" &&
-      interaction.commandName !== "purge" &&
-      !member
-    ) {
-      return interaction.reply({
-        content: "❌ User not found",
-        ephemeral: true
-      });
+    const member = interaction.options.getMember("user") || null;
+
+    if (interaction.commandName !== "announce" && interaction.commandName !== "purge" && !member) {
+      return interaction.reply({ content: "❌ User not found", ephemeral: true });
     }
 
     // ===== PURGE =====
@@ -187,18 +150,11 @@ client.on("interactionCreate", async (interaction) => {
       const amount = interaction.options.getInteger("amount");
 
       if (amount < 1 || amount > 100) {
-        return interaction.reply({
-          content: "❌ Enter 1-100",
-          ephemeral: true
-        });
+        return interaction.reply({ content: "❌ 1-100 only", ephemeral: true });
       }
 
       await interaction.channel.bulkDelete(amount, true);
-
-      return interaction.reply({
-        content: `🧹 Deleted ${amount} messages`,
-        ephemeral: true
-      });
+      return interaction.reply({ content: `🧹 Deleted ${amount}`, ephemeral: true });
     }
 
     // ===== KICK =====
@@ -216,7 +172,7 @@ client.on("interactionCreate", async (interaction) => {
     // ===== TIMEOUT =====
     if (interaction.commandName === "timeout") {
       await member.timeout(10 * 60 * 1000);
-      return interaction.reply(`⏱️ Timeout applied`);
+      return interaction.reply(`⏱️ Timeout done`);
     }
 
     // ===== WARN =====
@@ -237,17 +193,17 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "addrole") {
       const role = interaction.options.getRole("role");
       await member.roles.add(role);
-      return interaction.reply(`✅ Role ${role.name} given`);
+      return interaction.reply(`✅ Role added`);
     }
 
     // ===== REMOVE ROLE =====
     if (interaction.commandName === "removerole") {
       const role = interaction.options.getRole("role");
       await member.roles.remove(role);
-      return interaction.reply(`❌ Role ${role.name} removed`);
+      return interaction.reply(`❌ Role removed`);
     }
 
-    // ===== ADD MULTIPLE ROLES =====
+    // ===== MULTI ROLE =====
     if (interaction.commandName === "addroles") {
       const roles = [
         interaction.options.getRole("role1"),
@@ -257,17 +213,15 @@ client.on("interactionCreate", async (interaction) => {
         interaction.options.getRole("role5")
       ].filter(Boolean);
 
-      for (const role of roles) {
-        await member.roles.add(role);
-      }
+      for (const r of roles) await member.roles.add(r);
 
-      return interaction.reply(`✅ ${roles.length} roles added`);
+      return interaction.reply(`✅ Roles added`);
     }
 
   } catch (err) {
     console.error(err);
     return interaction.reply({
-      content: "❌ Error executing command",
+      content: "❌ Error",
       ephemeral: true
     });
   }
