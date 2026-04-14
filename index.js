@@ -8,8 +8,6 @@ const {
 } = require("discord.js");
 
 console.log("🔥 BOT STARTING...");
-
-// ===== ENV CHECK =====
 console.log("TOKEN EXISTS:", !!process.env.DISCORD_BOT_TOKEN);
 
 if (!process.env.DISCORD_BOT_TOKEN) {
@@ -19,47 +17,60 @@ if (!process.env.DISCORD_BOT_TOKEN) {
 
 // ===== KEEP ALIVE SERVER =====
 const app = express();
-
-app.get("/", (req, res) => {
-  res.send("Bot Alive ✅");
-});
-
-app.listen(3000, () => {
-  console.log("🌐 Web server running on port 3000");
-});
+app.get("/", (req, res) => res.send("Bot Alive ✅"));
+app.listen(3000, () => console.log("🌐 Web server running"));
 
 // ===== CLIENT =====
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-// ===== ONLY YOUR IDs =====
+// ===== ONLY YOUR IDS =====
 const allowedUsers = [
   "1420063137838923868",
   "1378368132376297514",
   "1335285604476522529"
 ];
 
-// ===== SLASH COMMANDS =====
+// ===== COMMANDS =====
 const commands = [
-  new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
+  new SlashCommandBuilder()
+    .setName("ping")
+    .setDescription("Check bot"),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick a user")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User to kick")
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban a user")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User to ban")
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("purge")
-    .setDescription("Delete messages")
+    .setDescription("Delete messages (1-100)")
     .addIntegerOption(o =>
       o.setName("amount")
-        .setDescription("1-100")
+        .setDescription("Number of messages")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("announce")
+    .setDescription("Send server announcement")
+    .addStringOption(o =>
+      o.setName("message")
+        .setDescription("Announcement message")
         .setRequired(true)
     )
 ].map(c => c.toJSON());
@@ -71,10 +82,8 @@ client.once("ready", async () => {
   console.log(`🟢 Logged in as ${client.user.tag}`);
 
   try {
-    console.log("⚡ Registering slash commands...");
-
     await rest.put(
-      Routes.applicationCommands(client.application.id),
+      Routes.applicationCommands(client.user.id),
       { body: commands }
     );
 
@@ -90,7 +99,7 @@ client.on("interactionCreate", async (interaction) => {
 
   try {
 
-    // ===== ONLY ALLOWED USERS =====
+    // ONLY ALLOWED USERS
     if (!allowedUsers.includes(interaction.user.id)) {
       return interaction.reply({
         content: "❌ You are not allowed to use this bot",
@@ -98,15 +107,54 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
+    // ===== PING =====
     if (interaction.commandName === "ping") {
       return interaction.reply("🏓 Pong!");
     }
 
+    // ===== ANNOUNCEMENT (NO 📢 PREFIX) =====
+    if (interaction.commandName === "announce") {
+      const msg = interaction.options.getString("message");
+
+      await interaction.reply({
+        content: "✅ Sent!",
+        ephemeral: true
+      });
+
+      // ❗ NO 📢 HERE (as you requested)
+      return interaction.channel.send(`${msg}`);
+    }
+
+    const member = interaction.options.getMember("user");
+
+    if (interaction.commandName !== "purge" && !member) {
+      return interaction.reply({
+        content: "❌ User not found",
+        ephemeral: true
+      });
+    }
+
+    // ===== KICK =====
+    if (interaction.commandName === "kick") {
+      await member.kick();
+      return interaction.reply(`👢 Kicked ${member.user.tag}`);
+    }
+
+    // ===== BAN =====
+    if (interaction.commandName === "ban") {
+      await member.ban();
+      return interaction.reply(`🔨 Banned ${member.user.tag}`);
+    }
+
+    // ===== PURGE =====
     if (interaction.commandName === "purge") {
       const amount = interaction.options.getInteger("amount");
 
       if (amount < 1 || amount > 100) {
-        return interaction.reply({ content: "❌ 1-100 only", ephemeral: true });
+        return interaction.reply({
+          content: "❌ 1-100 only",
+          ephemeral: true
+        });
       }
 
       await interaction.channel.bulkDelete(amount, true);
@@ -117,24 +165,8 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    const member = interaction.options.getMember("user");
-
-    if (!member) {
-      return interaction.reply({ content: "❌ User not found", ephemeral: true });
-    }
-
-    if (interaction.commandName === "kick") {
-      await member.kick();
-      return interaction.reply("👢 Kicked user");
-    }
-
-    if (interaction.commandName === "ban") {
-      await member.ban();
-      return interaction.reply("🔨 Banned user");
-    }
-
   } catch (err) {
-    console.error("❌ COMMAND ERROR:", err);
+    console.error("❌ ERROR:", err);
     return interaction.reply({
       content: "❌ Error occurred",
       ephemeral: true
