@@ -1,6 +1,3 @@
-process.on("uncaughtException", console.error);
-process.on("unhandledRejection", console.error);
-
 const express = require("express");
 const {
   Client,
@@ -13,6 +10,12 @@ const {
 } = require("discord.js");
 
 console.log("🔥 BOT STARTING...");
+
+// ===== CHECK TOKEN =====
+if (!process.env.DISCORD_BOT_TOKEN) {
+  console.error("❌ DISCORD_BOT_TOKEN is missing!");
+  process.exit(1);
+}
 
 // ===== WEB SERVER =====
 const app = express();
@@ -31,7 +34,7 @@ const client = new Client({
 // ===== WARN STORAGE =====
 const warns = new Map();
 
-// ===== SLASH COMMANDS =====
+// ===== COMMANDS =====
 const commands = [
 
   new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
@@ -85,11 +88,9 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("purge")
-    .setDescription("Delete messages (Admin only)")
+    .setDescription("Delete messages")
     .addIntegerOption(opt =>
-      opt.setName("amount")
-        .setDescription("1-100 messages")
-        .setRequired(true)
+      opt.setName("amount").setDescription("1-100").setRequired(true)
     )
 
 ].map(cmd => cmd.toJSON());
@@ -110,7 +111,6 @@ client.once("ready", async () => {
 
 // ===== WELCOME =====
 client.on("guildMemberAdd", async (member) => {
-
   const channel = member.guild.channels.cache.get("1493306099317739590");
   const role = member.guild.roles.cache.get("1366502670788984902");
 
@@ -119,19 +119,13 @@ client.on("guildMemberAdd", async (member) => {
   const embed = new EmbedBuilder()
     .setColor("#00b0f4")
     .setTitle("🌆 Welcome to City Role Play!")
-    .setDescription(`👋 Hey <@${member.id}>!
-
-Welcome to **City Role Play** 🌆  
-Enjoy your RP journey 🚀`)
+    .setDescription(`👋 Hey <@${member.id}>!\n\nWelcome to **City Role Play** 🌆\nEnjoy your RP journey 🚀`)
     .setThumbnail(member.user.displayAvatarURL())
-    .setImage("https://cdn.discordapp.com/attachments/1493306099317739590/1493309044956463224/file_00000000f47c72088b760408f4b93739.png")
-    .setFooter({ text: `Member #${member.guild.memberCount}` })
     .setTimestamp();
 
   await channel.send({
     content: `🎉 Welcome <@${member.id}>!`,
-    embeds: [embed],
-    allowedMentions: { users: [member.id] }
+    embeds: [embed]
   });
 
   if (role) member.roles.add(role).catch(() => {});
@@ -147,11 +141,8 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply("🏓 Pong!");
     }
 
-    const isAdmin = interaction.member.permissions.has(
-      PermissionsBitField.Flags.Administrator
-    );
-
-    if (!isAdmin) {
+    // ADMIN CHECK
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return interaction.reply({
         content: "❌ Admin only command",
         ephemeral: true
@@ -160,18 +151,11 @@ client.on("interactionCreate", async (interaction) => {
 
     const member = interaction.options.getMember("user");
 
-    if (interaction.commandName !== "purge" && interaction.commandName !== "announce" && !member) {
-      return interaction.reply({ content: "❌ User not found", ephemeral: true });
-    }
-
     if (interaction.commandName === "purge") {
       const amount = interaction.options.getInteger("amount");
 
       if (amount < 1 || amount > 100) {
-        return interaction.reply({
-          content: "❌ Enter between 1-100",
-          ephemeral: true
-        });
+        return interaction.reply({ content: "❌ 1-100 only", ephemeral: true });
       }
 
       await interaction.channel.bulkDelete(amount, true);
@@ -180,6 +164,10 @@ client.on("interactionCreate", async (interaction) => {
         content: `🧹 Deleted ${amount} messages`,
         ephemeral: true
       });
+    }
+
+    if (!member && interaction.commandName !== "announce") {
+      return interaction.reply({ content: "❌ User not found", ephemeral: true });
     }
 
     if (interaction.commandName === "kick") {
@@ -198,9 +186,8 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     if (interaction.commandName === "warn") {
-      const id = member.id;
-      warns.set(id, (warns.get(id) || 0) + 1);
-      return interaction.reply(`⚠️ Warned (${warns.get(id)})`);
+      warns.set(member.id, (warns.get(member.id) || 0) + 1);
+      return interaction.reply(`⚠️ Warned (${warns.get(member.id)})`);
     }
 
     if (interaction.commandName === "announce") {
@@ -212,13 +199,13 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "addrole") {
       const role = interaction.options.getRole("role");
       await member.roles.add(role);
-      return interaction.reply(`✅ Role ${role.name} given`);
+      return interaction.reply(`✅ Role added`);
     }
 
     if (interaction.commandName === "removerole") {
       const role = interaction.options.getRole("role");
       await member.roles.remove(role);
-      return interaction.reply(`❌ Role ${role.name} removed`);
+      return interaction.reply(`❌ Role removed`);
     }
 
     if (interaction.commandName === "addroles") {
@@ -240,18 +227,11 @@ client.on("interactionCreate", async (interaction) => {
   } catch (err) {
     console.error(err);
     return interaction.reply({
-      content: "❌ Error executing command",
+      content: "❌ Error",
       ephemeral: true
     });
   }
 });
 
 // ===== LOGIN =====
-if (!process.env.DISCORD_BOT_TOKEN) {
-  console.log("❌ TOKEN NOT FOUND");
-  process.exit(1);
-}
-
-client.login(process.env.DISCORD_BOT_TOKEN)
-  .then(() => console.log("✅ Bot logged in"))
-  .catch(err => console.error("LOGIN ERROR:", err));
+client.login(process.env.DISCORD_BOT_TOKEN);
