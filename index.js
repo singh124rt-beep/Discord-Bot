@@ -11,13 +11,6 @@ const {
 
 console.log("🔥 BOT STARTING...");
 
-// ===== ALLOWED USERS =====
-const allowedUsers = [
-  "1420063137838923868",
-  "1378368132376297514",
-  "1335285604476522529"
-];
-
 // ===== KEEP ALIVE SERVER =====
 const app = express();
 app.get("/", (req, res) => res.send("Bot Alive ✅"));
@@ -97,7 +90,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("purge")
-    .setDescription("Delete messages")
+    .setDescription("Delete messages (Admin only)")
     .addIntegerOption(opt =>
       opt.setName("amount")
         .setDescription("1-100")
@@ -159,29 +152,16 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply("🏓 Pong!");
     }
 
-    const isOwner = allowedUsers.includes(interaction.user.id);
-
+    // ===== ADMIN CHECK =====
     const isAdmin = interaction.member.permissions.has(
       PermissionsBitField.Flags.Administrator
     );
 
-    // ===== PURGE (ADMIN OR OWNER) =====
-    if (interaction.commandName === "purge") {
-      if (!isOwner && !isAdmin) {
-        return interaction.reply({
-          content: "❌ You cannot use purge",
-          ephemeral: true
-        });
-      }
-    }
-    // ===== OTHER COMMANDS (ONLY OWNER LIST) =====
-    else {
-      if (!isOwner) {
-        return interaction.reply({
-          content: "❌ You are not allowed to use this command",
-          ephemeral: true
-        });
-      }
+    if (!isAdmin) {
+      return interaction.reply({
+        content: "❌ Admin only command",
+        ephemeral: true
+      });
     }
 
     const member = interaction.options.getMember("user");
@@ -226,6 +206,7 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply(`⚠️ Warned (${warns.get(id)})`);
     }
 
+    // ✅ FIXED ANNOUNCE (NO HEADER)
     if (interaction.commandName === "announce") {
       const msg = interaction.options.getString("message");
       await interaction.reply({ content: "✅ Sent", ephemeral: true });
