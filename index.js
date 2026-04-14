@@ -11,6 +11,13 @@ const {
 
 console.log("🔥 BOT STARTING...");
 
+// ===== ALLOWED USERS ONLY =====
+const allowedUsers = [
+  "1420063137838923868",
+  "1378368132376297514",
+  "1335285604476522529"
+];
+
 // ===== KEEP ALIVE SERVER =====
 const app = express();
 app.get("/", (req, res) => res.send("Bot Alive ✅"));
@@ -90,7 +97,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("purge")
-    .setDescription("Delete messages (Admin only)")
+    .setDescription("Delete messages")
     .addIntegerOption(opt =>
       opt.setName("amount")
         .setDescription("1-100")
@@ -152,29 +159,38 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply("🏓 Pong!");
     }
 
-    // ===== ADMIN CHECK =====
-    const isAdmin = interaction.member.permissions.has(
-      PermissionsBitField.Flags.Administrator
-    );
+    // ===== ONLY YOUR IDS CAN USE BOT =====
+    const isAllowed = allowedUsers.includes(interaction.user.id);
 
-    if (!isAdmin) {
+    if (!isAllowed) {
       return interaction.reply({
-        content: "❌ Admin only command",
+        content: "❌ You are not allowed to use this bot",
         ephemeral: true
       });
     }
 
     const member = interaction.options.getMember("user");
 
-    if (interaction.commandName !== "purge" && interaction.commandName !== "announce" && !member) {
-      return interaction.reply({ content: "❌ User not found", ephemeral: true });
+    if (
+      interaction.commandName !== "announce" &&
+      interaction.commandName !== "purge" &&
+      !member
+    ) {
+      return interaction.reply({
+        content: "❌ User not found",
+        ephemeral: true
+      });
     }
 
+    // ===== PURGE =====
     if (interaction.commandName === "purge") {
       const amount = interaction.options.getInteger("amount");
 
       if (amount < 1 || amount > 100) {
-        return interaction.reply({ content: "❌ Enter 1-100", ephemeral: true });
+        return interaction.reply({
+          content: "❌ Enter 1-100",
+          ephemeral: true
+        });
       }
 
       await interaction.channel.bulkDelete(amount, true);
@@ -185,46 +201,53 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
+    // ===== KICK =====
     if (interaction.commandName === "kick") {
       await member.kick();
       return interaction.reply(`👢 ${member.user.tag} kicked`);
     }
 
+    // ===== BAN =====
     if (interaction.commandName === "ban") {
       await member.ban();
       return interaction.reply(`🔨 ${member.user.tag} banned`);
     }
 
+    // ===== TIMEOUT =====
     if (interaction.commandName === "timeout") {
       await member.timeout(10 * 60 * 1000);
       return interaction.reply(`⏱️ Timeout applied`);
     }
 
+    // ===== WARN =====
     if (interaction.commandName === "warn") {
       const id = member.id;
       warns.set(id, (warns.get(id) || 0) + 1);
       return interaction.reply(`⚠️ Warned (${warns.get(id)})`);
     }
 
-    // ✅ FIXED ANNOUNCE (NO HEADER)
+    // ===== ANNOUNCE =====
     if (interaction.commandName === "announce") {
       const msg = interaction.options.getString("message");
       await interaction.reply({ content: "✅ Sent", ephemeral: true });
       return interaction.channel.send(msg);
     }
 
+    // ===== ADD ROLE =====
     if (interaction.commandName === "addrole") {
       const role = interaction.options.getRole("role");
       await member.roles.add(role);
       return interaction.reply(`✅ Role ${role.name} given`);
     }
 
+    // ===== REMOVE ROLE =====
     if (interaction.commandName === "removerole") {
       const role = interaction.options.getRole("role");
       await member.roles.remove(role);
       return interaction.reply(`❌ Role ${role.name} removed`);
     }
 
+    // ===== ADD MULTIPLE ROLES =====
     if (interaction.commandName === "addroles") {
       const roles = [
         interaction.options.getRole("role1"),
