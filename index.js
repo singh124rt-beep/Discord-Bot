@@ -138,7 +138,7 @@ client.on("interactionCreate", async (interaction) => {
 
 // ===== LOGIN =====
 try {
-  client.login(process.env.DISCORD_TOKEN);
+  client.login(process.env.DISCORD_BOT_TOKEN);
 } catch (err) {
   console.error("LOGIN ERROR:", err);
   }
