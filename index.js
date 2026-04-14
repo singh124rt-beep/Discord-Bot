@@ -1,3 +1,6 @@
+process.on("uncaughtException", console.error);
+process.on("unhandledRejection", console.error);
+
 const express = require("express");
 const {
   Client,
@@ -14,7 +17,7 @@ console.log("🔥 BOT STARTING...");
 // ===== WEB SERVER =====
 const app = express();
 app.get("/", (req, res) => res.send("Bot Alive ✅"));
-app.listen(process.env.PORT || 3000);
+app.listen(process.env.PORT || 3000, () => console.log("🌐 Web running"));
 
 // ===== CLIENT =====
 const client = new Client({
@@ -91,7 +94,7 @@ const commands = [
 
 ].map(cmd => cmd.toJSON());
 
-const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
 // ===== READY =====
 client.once("ready", async () => {
@@ -136,22 +139,14 @@ Enjoy your RP journey 🚀`)
 
 // ===== COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
   try {
-    if (!interaction.isChatInputCommand()) return;
 
-    let member = null;
-
-    // ✅ FIX: only get member if exists
-    if (interaction.options.getUser("user")) {
-      member = interaction.options.getMember("user");
-    }
-
-    // ===== PING =====
     if (interaction.commandName === "ping") {
       return interaction.reply("🏓 Pong!");
     }
 
-    // ===== ADMIN CHECK =====
     const isAdmin = interaction.member.permissions.has(
       PermissionsBitField.Flags.Administrator
     );
@@ -163,17 +158,12 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    // ===== NEED USER CHECK =====
-    const needsUser = ["kick", "ban", "timeout", "warn", "addrole", "removerole", "addroles"];
+    const member = interaction.options.getMember("user");
 
-    if (needsUser.includes(interaction.commandName) && !member) {
-      return interaction.reply({
-        content: "❌ User not found",
-        ephemeral: true
-      });
+    if (interaction.commandName !== "purge" && interaction.commandName !== "announce" && !member) {
+      return interaction.reply({ content: "❌ User not found", ephemeral: true });
     }
 
-    // ===== PURGE =====
     if (interaction.commandName === "purge") {
       const amount = interaction.options.getInteger("amount");
 
@@ -192,7 +182,6 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    // ===== MOD COMMANDS =====
     if (interaction.commandName === "kick") {
       await member.kick();
       return interaction.reply(`👢 ${member.user.tag} kicked`);
@@ -249,9 +238,20 @@ client.on("interactionCreate", async (interaction) => {
     }
 
   } catch (err) {
-    console.error("❌ Error:", err);
+    console.error(err);
+    return interaction.reply({
+      content: "❌ Error executing command",
+      ephemeral: true
+    });
   }
 });
 
 // ===== LOGIN =====
-client.login(process.env.DISCORD_TOKEN);
+if (!process.env.DISCORD_BOT_TOKEN) {
+  console.log("❌ TOKEN NOT FOUND");
+  process.exit(1);
+}
+
+client.login(process.env.DISCORD_BOT_TOKEN)
+  .then(() => console.log("✅ Bot logged in"))
+  .catch(err => console.error("LOGIN ERROR:", err));
