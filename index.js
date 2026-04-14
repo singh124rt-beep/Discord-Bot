@@ -9,6 +9,14 @@ const {
 
 console.log("🔥 BOT STARTING...");
 
+// ===== ENV CHECK =====
+console.log("TOKEN EXISTS:", !!process.env.DISCORD_BOT_TOKEN);
+
+if (!process.env.DISCORD_BOT_TOKEN) {
+  console.log("❌ DISCORD_BOT_TOKEN MISSING");
+  process.exit(1);
+}
+
 // ===== KEEP ALIVE SERVER =====
 const app = express();
 
@@ -17,16 +25,8 @@ app.get("/", (req, res) => {
 });
 
 app.listen(3000, () => {
-  console.log("🌐 Web server running");
+  console.log("🌐 Web server running on port 3000");
 });
-
-// ===== TOKEN CHECK =====
-if (!process.env.DISCORD_BOT_TOKEN) {
-  console.log("❌ DISCORD_BOT_TOKEN MISSING");
-  process.exit(1);
-}
-
-console.log("TOKEN CHECK:", process.env.DISCORD_BOT_TOKEN ? "FOUND" : "MISSING");
 
 // ===== CLIENT =====
 const client = new Client({
@@ -40,7 +40,7 @@ const allowedUsers = [
   "1335285604476522529"
 ];
 
-// ===== COMMANDS =====
+// ===== SLASH COMMANDS =====
 const commands = [
   new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
 
@@ -71,6 +71,8 @@ client.once("ready", async () => {
   console.log(`🟢 Logged in as ${client.user.tag}`);
 
   try {
+    console.log("⚡ Registering slash commands...");
+
     await rest.put(
       Routes.applicationCommands(client.application.id),
       { body: commands }
@@ -108,12 +110,16 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       await interaction.channel.bulkDelete(amount, true);
-      return interaction.reply({ content: `🧹 Deleted ${amount}`, ephemeral: true });
+
+      return interaction.reply({
+        content: `🧹 Deleted ${amount} messages`,
+        ephemeral: true
+      });
     }
 
     const member = interaction.options.getMember("user");
 
-    if (!member && interaction.commandName !== "ping") {
+    if (!member) {
       return interaction.reply({ content: "❌ User not found", ephemeral: true });
     }
 
@@ -128,7 +134,7 @@ client.on("interactionCreate", async (interaction) => {
     }
 
   } catch (err) {
-    console.error(err);
+    console.error("❌ COMMAND ERROR:", err);
     return interaction.reply({
       content: "❌ Error occurred",
       ephemeral: true
@@ -137,8 +143,6 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 // ===== LOGIN =====
-try {
-  client.login(process.env.DISCORD_BOT_TOKEN);
-} catch (err) {
-  console.error("LOGIN ERROR:", err);
-  }
+client.login(process.env.DISCORD_BOT_TOKEN)
+  .then(() => console.log("LOGIN SUCCESS"))
+  .catch(err => console.error("LOGIN FAILED:", err));
