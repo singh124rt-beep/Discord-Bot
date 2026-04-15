@@ -1,11 +1,11 @@
 const express = require("express");
+const fs = require("fs");
 const {
   Client,
   GatewayIntentBits,
   REST,
   Routes,
-  SlashCommandBuilder,
-  PermissionsBitField
+  SlashCommandBuilder
 } = require("discord.js");
 
 console.log("🔥 BOT STARTING...");
@@ -16,7 +16,7 @@ if (!process.env.DISCORD_BOT_TOKEN) {
   process.exit(1);
 }
 
-// ===== KEEP ALIVE SERVER =====
+// ===== KEEP ALIVE =====
 const app = express();
 app.get("/", (req, res) => res.send("Bot Alive ✅"));
 app.listen(3000, () => console.log("🌐 Web server running"));
@@ -26,87 +26,74 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
-// ===== ONLY SELECTED USERS =====
+// ===== ALLOWED USERS =====
 const allowedUsers = [
   "1420063137838923868",
   "1378368132376297514",
   "1335285604476522529"
 ];
 
-// ===== WARN STORAGE =====
-const warns = new Map();
+// ===== DATABASE FILE =====
+const DB_FILE = "./warns.json";
+if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, "{}");
+
+function getDB() {
+  return JSON.parse(fs.readFileSync(DB_FILE));
+}
+
+function saveDB(data) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+}
 
 // ===== COMMANDS =====
 const commands = [
-  new SlashCommandBuilder()
-    .setName("ping")
-    .setDescription("Check bot"),
+  new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
 
   new SlashCommandBuilder()
     .setName("kick")
-    .setDescription("Kick a user")
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User to kick")
-        .setRequired(true)
-    ),
+    .setDescription("Kick user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
-    .setDescription("Ban a user")
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User to ban")
-        .setRequired(true)
-    ),
+    .setDescription("Ban user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("timeout")
+    .setDescription("Timeout user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addIntegerOption(o => o.setName("minutes").setDescription("Minutes").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("removetimeout")
+    .setDescription("Remove timeout")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("warn")
+    .setDescription("Warn user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("unwarn")
+    .setDescription("Remove warn")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
-    .setDescription("Delete messages (1-100)")
-    .addIntegerOption(o =>
-      o.setName("amount")
-        .setDescription("Number of messages")
-        .setRequired(true)
-    ),
+    .setDescription("Delete messages")
+    .addIntegerOption(o => o.setName("amount").setDescription("1-100").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("announce")
-    .setDescription("Send server announcement")
-    .addStringOption(o =>
-      o.setName("message")
-        .setDescription("Announcement message")
-        .setRequired(true)
-    ),
+    .setDescription("Send announcement")
+    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
 
-  // ===== TIMEOUT =====
-  new SlashCommandBuilder()
-    .setName("timeout")
-    .setDescription("Timeout a user (selected only)")
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User to timeout")
-        .setRequired(true)
-    ),
-
-  // ===== REMOVE TIMEOUT =====
-  new SlashCommandBuilder()
-    .setName("removetimeout")
-    .setDescription("Remove timeout (selected only)")
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User to remove timeout")
-        .setRequired(true)
-    ),
-
-  // ===== WARN =====
-  new SlashCommandBuilder()
-    .setName("warn")
-    .setDescription("Warn a user (selected only)")
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User to warn")
-        .setRequired(true)
-    )
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
@@ -115,85 +102,66 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN)
 client.once("ready", async () => {
   console.log(`🟢 Logged in as ${client.user.tag}`);
 
-  try {
-    await rest.put(
-      Routes.applicationCommands(client.user.id),
-      { body: commands }
-    );
+  await rest.put(
+    Routes.applicationCommands(client.user.id),
+    { body: commands }
+  );
 
-    console.log("✅ Slash commands registered");
-  } catch (err) {
-    console.error("❌ Slash command error:", err);
-  }
+  console.log("✅ Commands registered");
 });
 
 // ===== COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
+  if (!allowedUsers.includes(interaction.user.id)) {
+    return interaction.reply({ content: "❌ Not allowed", ephemeral: true });
+  }
+
+  const db = getDB();
+
   try {
 
-    // ONLY SELECTED USERS CAN USE BOT
-    if (!allowedUsers.includes(interaction.user.id)) {
-      return interaction.reply({
-        content: "❌ You are not allowed to use this bot",
-        ephemeral: true
-      });
-    }
-
-    // ===== PING =====
     if (interaction.commandName === "ping") {
       return interaction.reply("🏓 Pong!");
     }
 
-    // ===== ANNOUNCEMENT (NO 📢) =====
     if (interaction.commandName === "announce") {
       const msg = interaction.options.getString("message");
-
       await interaction.reply({ content: "✅ Sent!", ephemeral: true });
-      return interaction.channel.send(msg);
+      return interaction.channel.send(msg); // NO 📢
     }
 
     const member = interaction.options.getMember("user");
 
     if (interaction.commandName !== "purge" && !member) {
-      return interaction.reply({
-        content: "❌ User not found",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "❌ User not found", ephemeral: true });
     }
 
     // ===== KICK =====
     if (interaction.commandName === "kick") {
-      await member.kick();
-      return interaction.reply(`👢 Kicked ${member.user.tag}`);
+      const reason = interaction.options.getString("reason");
+      await member.kick(reason);
+      return interaction.reply(`👢 ${member.user.tag} kicked | Reason: ${reason}`);
     }
 
     // ===== BAN =====
     if (interaction.commandName === "ban") {
-      await member.ban();
-      return interaction.reply(`🔨 Banned ${member.user.tag}`);
-    }
-
-    // ===== PURGE =====
-    if (interaction.commandName === "purge") {
-      const amount = interaction.options.getInteger("amount");
-
-      if (amount < 1 || amount > 100) {
-        return interaction.reply({
-          content: "❌ 1-100 only",
-          ephemeral: true
-        });
-      }
-
-      await interaction.channel.bulkDelete(amount, true);
-      return interaction.reply(`🧹 Deleted ${amount} messages`);
+      const reason = interaction.options.getString("reason");
+      await member.ban({ reason });
+      return interaction.reply(`🔨 ${member.user.tag} banned | Reason: ${reason}`);
     }
 
     // ===== TIMEOUT =====
     if (interaction.commandName === "timeout") {
-      await member.timeout(10 * 60 * 1000); // 10 min
-      return interaction.reply(`⏱️ Timeout applied to ${member.user.tag}`);
+      const minutes = interaction.options.getInteger("minutes");
+      const reason = interaction.options.getString("reason");
+
+      await member.timeout(minutes * 60 * 1000, reason);
+
+      return interaction.reply(
+        `⏱️ ${member} timed out for ${minutes} minutes\nReason: ${reason}`
+      );
     }
 
     // ===== REMOVE TIMEOUT =====
@@ -204,24 +172,61 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== WARN =====
     if (interaction.commandName === "warn") {
+      const reason = interaction.options.getString("reason");
       const id = member.id;
-      warns.set(id, (warns.get(id) || 0) + 1);
+
+      if (!db[id]) db[id] = 0;
+      db[id]++;
+
+      saveDB(db);
+
+      // AUTO 3 WARNS = 1 DAY TIMEOUT
+      if (db[id] >= 3) {
+        await member.timeout(24 * 60 * 60 * 1000, "3 warnings reached");
+        db[id] = 0;
+        saveDB(db);
+
+        return interaction.reply(
+          `⚠️ ${member.user.tag} reached 3 warns → 1 DAY TIMEOUT`
+        );
+      }
 
       return interaction.reply(
-        `⚠️ Warned ${member.user.tag} | Total: ${warns.get(id)}`
+        `⚠️ Warned ${member.user.tag} | Total: ${db[id]}\nReason: ${reason}`
       );
     }
 
+    // ===== UNWARN =====
+    if (interaction.commandName === "unwarn") {
+      const id = member.id;
+
+      if (!db[id]) db[id] = 0;
+      if (db[id] > 0) db[id]--;
+
+      saveDB(db);
+
+      return interaction.reply(
+        `✅ Removed warn from ${member.user.tag} | Total: ${db[id]}`
+      );
+    }
+
+    // ===== PURGE =====
+    if (interaction.commandName === "purge") {
+      const amount = interaction.options.getInteger("amount");
+
+      if (amount < 1 || amount > 100) {
+        return interaction.reply({ content: "❌ 1-100 only", ephemeral: true });
+      }
+
+      await interaction.channel.bulkDelete(amount, true);
+      return interaction.reply({ content: `🧹 Deleted ${amount}`, ephemeral: true });
+    }
+
   } catch (err) {
-    console.error("❌ ERROR:", err);
-    return interaction.reply({
-      content: "❌ Error occurred",
-      ephemeral: true
-    });
+    console.error(err);
+    return interaction.reply({ content: "❌ Error", ephemeral: true });
   }
 });
 
 // ===== LOGIN =====
-client.login(process.env.DISCORD_BOT_TOKEN)
-  .then(() => console.log("LOGIN SUCCESS"))
-  .catch(err => console.error("LOGIN FAILED:", err));
+client.login(process.env.DISCORD_BOT_TOKEN);
