@@ -4,7 +4,8 @@ const {
   GatewayIntentBits,
   REST,
   Routes,
-  SlashCommandBuilder
+  SlashCommandBuilder,
+  PermissionsBitField
 } = require("discord.js");
 
 console.log("🔥 BOT STARTING...");
@@ -22,15 +23,18 @@ app.listen(3000, () => console.log("🌐 Web server running"));
 
 // ===== CLIENT =====
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
-// ===== ONLY YOUR IDS =====
+// ===== ONLY SELECTED USERS =====
 const allowedUsers = [
   "1420063137838923868",
   "1378368132376297514",
   "1335285604476522529"
 ];
+
+// ===== WARN STORAGE =====
+const warns = new Map();
 
 // ===== COMMANDS =====
 const commands = [
@@ -72,6 +76,36 @@ const commands = [
       o.setName("message")
         .setDescription("Announcement message")
         .setRequired(true)
+    ),
+
+  // ===== TIMEOUT =====
+  new SlashCommandBuilder()
+    .setName("timeout")
+    .setDescription("Timeout a user (selected only)")
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User to timeout")
+        .setRequired(true)
+    ),
+
+  // ===== REMOVE TIMEOUT =====
+  new SlashCommandBuilder()
+    .setName("removetimeout")
+    .setDescription("Remove timeout (selected only)")
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User to remove timeout")
+        .setRequired(true)
+    ),
+
+  // ===== WARN =====
+  new SlashCommandBuilder()
+    .setName("warn")
+    .setDescription("Warn a user (selected only)")
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User to warn")
+        .setRequired(true)
     )
 ].map(c => c.toJSON());
 
@@ -99,7 +133,7 @@ client.on("interactionCreate", async (interaction) => {
 
   try {
 
-    // ONLY ALLOWED USERS
+    // ONLY SELECTED USERS CAN USE BOT
     if (!allowedUsers.includes(interaction.user.id)) {
       return interaction.reply({
         content: "❌ You are not allowed to use this bot",
@@ -112,17 +146,12 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply("🏓 Pong!");
     }
 
-    // ===== ANNOUNCEMENT (NO 📢 PREFIX) =====
+    // ===== ANNOUNCEMENT (NO 📢) =====
     if (interaction.commandName === "announce") {
       const msg = interaction.options.getString("message");
 
-      await interaction.reply({
-        content: "✅ Sent!",
-        ephemeral: true
-      });
-
-      // ❗ NO 📢 HERE (as you requested)
-      return interaction.channel.send(`${msg}`);
+      await interaction.reply({ content: "✅ Sent!", ephemeral: true });
+      return interaction.channel.send(msg);
     }
 
     const member = interaction.options.getMember("user");
@@ -158,11 +187,29 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       await interaction.channel.bulkDelete(amount, true);
+      return interaction.reply(`🧹 Deleted ${amount} messages`);
+    }
 
-      return interaction.reply({
-        content: `🧹 Deleted ${amount} messages`,
-        ephemeral: true
-      });
+    // ===== TIMEOUT =====
+    if (interaction.commandName === "timeout") {
+      await member.timeout(10 * 60 * 1000); // 10 min
+      return interaction.reply(`⏱️ Timeout applied to ${member.user.tag}`);
+    }
+
+    // ===== REMOVE TIMEOUT =====
+    if (interaction.commandName === "removetimeout") {
+      await member.timeout(null);
+      return interaction.reply(`✅ Timeout removed from ${member.user.tag}`);
+    }
+
+    // ===== WARN =====
+    if (interaction.commandName === "warn") {
+      const id = member.id;
+      warns.set(id, (warns.get(id) || 0) + 1);
+
+      return interaction.reply(
+        `⚠️ Warned ${member.user.tag} | Total: ${warns.get(id)}`
+      );
     }
 
   } catch (err) {
