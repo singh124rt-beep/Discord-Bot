@@ -11,8 +11,9 @@ const {
 console.log("🔥 BOT STARTING...");
 console.log("TOKEN EXISTS:", !!process.env.DISCORD_BOT_TOKEN);
 
+// ===== HARD TOKEN CHECK =====
 if (!process.env.DISCORD_BOT_TOKEN) {
-  console.log("❌ DISCORD_BOT_TOKEN MISSING");
+  console.error("❌ TOKEN NOT FOUND IN ENV");
   process.exit(1);
 }
 
@@ -26,6 +27,14 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
+// ===== ERROR HANDLING =====
+process.on("unhandledRejection", err => {
+  console.error("❌ UNHANDLED REJECTION:", err);
+});
+process.on("uncaughtException", err => {
+  console.error("❌ UNCAUGHT EXCEPTION:", err);
+});
+
 // ===== ALLOWED USERS =====
 const allowedUsers = [
   "1420063137838923868",
@@ -37,13 +46,8 @@ const allowedUsers = [
 const DB_FILE = "./warns.json";
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, "{}");
 
-function getDB() {
-  return JSON.parse(fs.readFileSync(DB_FILE));
-}
-
-function saveDB(data) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-}
+const getDB = () => JSON.parse(fs.readFileSync(DB_FILE));
+const saveDB = data => fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 
 // ===== COMMANDS =====
 const commands = [
@@ -102,12 +106,15 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN)
 client.once("ready", async () => {
   console.log(`🟢 Logged in as ${client.user.tag}`);
 
-  await rest.put(
-    Routes.applicationCommands(client.user.id),
-    { body: commands }
-  );
-
-  console.log("✅ Commands registered");
+  try {
+    await rest.put(
+      Routes.applicationCommands(client.user.id),
+      { body: commands }
+    );
+    console.log("✅ Commands registered");
+  } catch (err) {
+    console.error("❌ Command register error:", err);
+  }
 });
 
 // ===== COMMAND HANDLER =====
@@ -121,19 +128,14 @@ client.on("interactionCreate", async (interaction) => {
   const db = getDB();
 
   try {
-
-    // ===== PING =====
     if (interaction.commandName === "ping") {
       return interaction.reply("🏓 Pong!");
     }
 
-    // ===== ANNOUNCE =====
     if (interaction.commandName === "announce") {
       await interaction.deferReply({ ephemeral: true });
-
       const msg = interaction.options.getString("message");
       await interaction.channel.send(msg);
-
       return interaction.editReply("✅ Sent!");
     }
 
@@ -143,96 +145,64 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply({ content: "❌ User not found", ephemeral: true });
     }
 
-    // ===== KICK =====
     if (interaction.commandName === "kick") {
       await interaction.deferReply();
-
       const reason = interaction.options.getString("reason");
       await member.kick(reason);
-
-      return interaction.editReply(`👢 ${member.user.tag} kicked | Reason: ${reason}`);
+      return interaction.editReply(`👢 ${member.user.tag} kicked | ${reason}`);
     }
 
-    // ===== BAN =====
     if (interaction.commandName === "ban") {
       await interaction.deferReply();
-
       const reason = interaction.options.getString("reason");
       await member.ban({ reason });
-
-      return interaction.editReply(`🔨 ${member.user.tag} banned | Reason: ${reason}`);
+      return interaction.editReply(`🔨 ${member.user.tag} banned | ${reason}`);
     }
 
-    // ===== TIMEOUT =====
     if (interaction.commandName === "timeout") {
       await interaction.deferReply();
-
       const minutes = interaction.options.getInteger("minutes");
       const reason = interaction.options.getString("reason");
-
-      await member.timeout(minutes * 60 * 1000, reason);
-
-      return interaction.editReply(
-        `⏱️ ${member} timed out for ${minutes} minutes\nReason: ${reason}`
-      );
+      await member.timeout(minutes * 60000, reason);
+      return interaction.editReply(`⏱️ ${member} | ${minutes} min | ${reason}`);
     }
 
-    // ===== REMOVE TIMEOUT =====
     if (interaction.commandName === "removetimeout") {
       await interaction.deferReply();
-
       await member.timeout(null);
-
-      return interaction.editReply(`✅ Timeout removed from ${member.user.tag}`);
+      return interaction.editReply(`✅ Timeout removed`);
     }
 
-    // ===== WARN =====
     if (interaction.commandName === "warn") {
       await interaction.deferReply();
-
-      const reason = interaction.options.getString("reason");
       const id = member.id;
+      const reason = interaction.options.getString("reason");
 
-      if (!db[id]) db[id] = 0;
-      db[id]++;
-
+      db[id] = (db[id] || 0) + 1;
       saveDB(db);
 
       if (db[id] >= 3) {
-        await member.timeout(24 * 60 * 60 * 1000, "3 warnings reached");
+        await member.timeout(86400000, "3 warns");
         db[id] = 0;
         saveDB(db);
-
-        return interaction.editReply(
-          `⚠️ ${member.user.tag} reached 3 warns → 1 DAY TIMEOUT`
-        );
+        return interaction.editReply(`⚠️ 3 warns → 1 DAY TIMEOUT`);
       }
 
-      return interaction.editReply(
-        `⚠️ Warned ${member.user.tag} | Total: ${db[id]}\nReason: ${reason}`
-      );
+      return interaction.editReply(`⚠️ Warned | Total: ${db[id]} | ${reason}`);
     }
 
-    // ===== UNWARN =====
     if (interaction.commandName === "unwarn") {
       await interaction.deferReply();
-
       const id = member.id;
 
-      if (!db[id]) db[id] = 0;
-      if (db[id] > 0) db[id]--;
-
+      db[id] = Math.max((db[id] || 0) - 1, 0);
       saveDB(db);
 
-      return interaction.editReply(
-        `✅ Removed warn from ${member.user.tag} | Total: ${db[id]}`
-      );
+      return interaction.editReply(`✅ Warn removed | Total: ${db[id]}`);
     }
 
-    // ===== PURGE =====
     if (interaction.commandName === "purge") {
       await interaction.deferReply({ ephemeral: true });
-
       const amount = interaction.options.getInteger("amount");
 
       if (amount < 1 || amount > 100) {
@@ -240,20 +210,23 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       await interaction.channel.bulkDelete(amount, true);
-
       return interaction.editReply(`🧹 Deleted ${amount}`);
     }
 
   } catch (err) {
-    console.error(err);
+    console.error("❌ COMMAND ERROR:", err);
 
     if (interaction.deferred) {
-      return interaction.editReply("❌ Error occurred");
+      return interaction.editReply("❌ Error");
     } else {
-      return interaction.reply({ content: "❌ Error occurred", ephemeral: true });
+      return interaction.reply({ content: "❌ Error", ephemeral: true });
     }
   }
 });
 
-// ===== LOGIN =====
-client.login(process.env.DISCORD_BOT_TOKEN);
+// ===== FORCE LOGIN =====
+console.log("🔐 Attempting login...");
+
+client.login(process.env.DISCORD_BOT_TOKEN)
+  .then(() => console.log("✅ LOGIN SUCCESS"))
+  .catch(err => console.error("❌ LOGIN FAILED:", err));
