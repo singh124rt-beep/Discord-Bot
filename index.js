@@ -33,7 +33,7 @@ const allowedUsers = [
   "1335285604476522529"
 ];
 
-// ===== DATABASE FILE =====
+// ===== DATABASE =====
 const DB_FILE = "./warns.json";
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, "{}");
 
@@ -122,14 +122,19 @@ client.on("interactionCreate", async (interaction) => {
 
   try {
 
+    // ===== PING =====
     if (interaction.commandName === "ping") {
       return interaction.reply("🏓 Pong!");
     }
 
+    // ===== ANNOUNCE =====
     if (interaction.commandName === "announce") {
+      await interaction.deferReply({ ephemeral: true });
+
       const msg = interaction.options.getString("message");
-      await interaction.reply({ content: "✅ Sent!", ephemeral: true });
-      return interaction.channel.send(msg); // NO 📢
+      await interaction.channel.send(msg);
+
+      return interaction.editReply("✅ Sent!");
     }
 
     const member = interaction.options.getMember("user");
@@ -140,38 +145,51 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== KICK =====
     if (interaction.commandName === "kick") {
+      await interaction.deferReply();
+
       const reason = interaction.options.getString("reason");
       await member.kick(reason);
-      return interaction.reply(`👢 ${member.user.tag} kicked | Reason: ${reason}`);
+
+      return interaction.editReply(`👢 ${member.user.tag} kicked | Reason: ${reason}`);
     }
 
     // ===== BAN =====
     if (interaction.commandName === "ban") {
+      await interaction.deferReply();
+
       const reason = interaction.options.getString("reason");
       await member.ban({ reason });
-      return interaction.reply(`🔨 ${member.user.tag} banned | Reason: ${reason}`);
+
+      return interaction.editReply(`🔨 ${member.user.tag} banned | Reason: ${reason}`);
     }
 
     // ===== TIMEOUT =====
     if (interaction.commandName === "timeout") {
+      await interaction.deferReply();
+
       const minutes = interaction.options.getInteger("minutes");
       const reason = interaction.options.getString("reason");
 
       await member.timeout(minutes * 60 * 1000, reason);
 
-      return interaction.reply(
+      return interaction.editReply(
         `⏱️ ${member} timed out for ${minutes} minutes\nReason: ${reason}`
       );
     }
 
     // ===== REMOVE TIMEOUT =====
     if (interaction.commandName === "removetimeout") {
+      await interaction.deferReply();
+
       await member.timeout(null);
-      return interaction.reply(`✅ Timeout removed from ${member.user.tag}`);
+
+      return interaction.editReply(`✅ Timeout removed from ${member.user.tag}`);
     }
 
     // ===== WARN =====
     if (interaction.commandName === "warn") {
+      await interaction.deferReply();
+
       const reason = interaction.options.getString("reason");
       const id = member.id;
 
@@ -180,24 +198,25 @@ client.on("interactionCreate", async (interaction) => {
 
       saveDB(db);
 
-      // AUTO 3 WARNS = 1 DAY TIMEOUT
       if (db[id] >= 3) {
         await member.timeout(24 * 60 * 60 * 1000, "3 warnings reached");
         db[id] = 0;
         saveDB(db);
 
-        return interaction.reply(
+        return interaction.editReply(
           `⚠️ ${member.user.tag} reached 3 warns → 1 DAY TIMEOUT`
         );
       }
 
-      return interaction.reply(
+      return interaction.editReply(
         `⚠️ Warned ${member.user.tag} | Total: ${db[id]}\nReason: ${reason}`
       );
     }
 
     // ===== UNWARN =====
     if (interaction.commandName === "unwarn") {
+      await interaction.deferReply();
+
       const id = member.id;
 
       if (!db[id]) db[id] = 0;
@@ -205,26 +224,34 @@ client.on("interactionCreate", async (interaction) => {
 
       saveDB(db);
 
-      return interaction.reply(
+      return interaction.editReply(
         `✅ Removed warn from ${member.user.tag} | Total: ${db[id]}`
       );
     }
 
     // ===== PURGE =====
     if (interaction.commandName === "purge") {
+      await interaction.deferReply({ ephemeral: true });
+
       const amount = interaction.options.getInteger("amount");
 
       if (amount < 1 || amount > 100) {
-        return interaction.reply({ content: "❌ 1-100 only", ephemeral: true });
+        return interaction.editReply("❌ 1-100 only");
       }
 
       await interaction.channel.bulkDelete(amount, true);
-      return interaction.reply({ content: `🧹 Deleted ${amount}`, ephemeral: true });
+
+      return interaction.editReply(`🧹 Deleted ${amount}`);
     }
 
   } catch (err) {
     console.error(err);
-    return interaction.reply({ content: "❌ Error", ephemeral: true });
+
+    if (interaction.deferred) {
+      return interaction.editReply("❌ Error occurred");
+    } else {
+      return interaction.reply({ content: "❌ Error occurred", ephemeral: true });
+    }
   }
 });
 
