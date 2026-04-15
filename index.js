@@ -1,5 +1,4 @@
 const express = require("express");
-const fs = require("fs");
 const {
   Client,
   GatewayIntentBits,
@@ -11,9 +10,8 @@ const {
 console.log("🔥 BOT STARTING...");
 console.log("TOKEN EXISTS:", !!process.env.DISCORD_BOT_TOKEN);
 
-// ===== HARD TOKEN CHECK =====
 if (!process.env.DISCORD_BOT_TOKEN) {
-  console.error("❌ TOKEN NOT FOUND IN ENV");
+  console.log("❌ TOKEN MISSING");
   process.exit(1);
 }
 
@@ -27,14 +25,6 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
-// ===== ERROR HANDLING =====
-process.on("unhandledRejection", err => {
-  console.error("❌ UNHANDLED REJECTION:", err);
-});
-process.on("uncaughtException", err => {
-  console.error("❌ UNCAUGHT EXCEPTION:", err);
-});
-
 // ===== ALLOWED USERS =====
 const allowedUsers = [
   "1420063137838923868",
@@ -42,12 +32,8 @@ const allowedUsers = [
   "1335285604476522529"
 ];
 
-// ===== DATABASE =====
-const DB_FILE = "./warns.json";
-if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, "{}");
-
-const getDB = () => JSON.parse(fs.readFileSync(DB_FILE));
-const saveDB = data => fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+// ===== WARN STORAGE =====
+const warns = new Map();
 
 // ===== COMMANDS =====
 const commands = [
@@ -69,7 +55,7 @@ const commands = [
     .setName("timeout")
     .setDescription("Timeout user")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("minutes").setDescription("Minutes").setRequired(true))
+    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
@@ -80,8 +66,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("unwarn")
@@ -97,136 +82,126 @@ const commands = [
     .setName("announce")
     .setDescription("Send announcement")
     .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
 // ===== READY =====
 client.once("ready", async () => {
-  console.log(`🟢 Logged in as ${client.user.tag}`);
+  console.log(`🟢 LOGGED IN AS ${client.user.tag}`);
 
-  try {
-    await rest.put(
-      Routes.applicationCommands(client.user.id),
-      { body: commands }
-    );
-    console.log("✅ Commands registered");
-  } catch (err) {
-    console.error("❌ Command register error:", err);
-  }
+  await rest.put(
+    Routes.applicationCommands(client.user.id),
+    { body: commands }
+  );
+
+  console.log("✅ COMMANDS REGISTERED");
 });
 
 // ===== COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (!allowedUsers.includes(interaction.user.id)) {
-    return interaction.reply({ content: "❌ Not allowed", ephemeral: true });
-  }
-
-  const db = getDB();
+  // 🚨 FIX FOR "APPLICATION DID NOT RESPOND"
+  await interaction.deferReply({ ephemeral: false });
 
   try {
-    if (interaction.commandName === "ping") {
-      return interaction.reply("🏓 Pong!");
-    }
 
-    if (interaction.commandName === "announce") {
-      await interaction.deferReply({ ephemeral: true });
-      const msg = interaction.options.getString("message");
-      await interaction.channel.send(msg);
-      return interaction.editReply("✅ Sent!");
+    if (!allowedUsers.includes(interaction.user.id)) {
+      return interaction.editReply("❌ Not allowed");
     }
 
     const member = interaction.options.getMember("user");
 
-    if (interaction.commandName !== "purge" && !member) {
-      return interaction.reply({ content: "❌ User not found", ephemeral: true });
+    // ===== PING =====
+    if (interaction.commandName === "ping") {
+      return interaction.editReply("🏓 Pong!");
     }
 
-    if (interaction.commandName === "kick") {
-      await interaction.deferReply();
-      const reason = interaction.options.getString("reason");
-      await member.kick(reason);
-      return interaction.editReply(`👢 ${member.user.tag} kicked | ${reason}`);
+    // ===== ANNOUNCE (NO 📢) =====
+    if (interaction.commandName === "announce") {
+      const msg = interaction.options.getString("message");
+      await interaction.editReply("✅ Sent!");
+      return interaction.channel.send(msg);
     }
 
-    if (interaction.commandName === "ban") {
-      await interaction.deferReply();
-      const reason = interaction.options.getString("reason");
-      await member.ban({ reason });
-      return interaction.editReply(`🔨 ${member.user.tag} banned | ${reason}`);
-    }
-
-    if (interaction.commandName === "timeout") {
-      await interaction.deferReply();
-      const minutes = interaction.options.getInteger("minutes");
-      const reason = interaction.options.getString("reason");
-      await member.timeout(minutes * 60000, reason);
-      return interaction.editReply(`⏱️ ${member} | ${minutes} min | ${reason}`);
-    }
-
-    if (interaction.commandName === "removetimeout") {
-      await interaction.deferReply();
-      await member.timeout(null);
-      return interaction.editReply(`✅ Timeout removed`);
-    }
-
-    if (interaction.commandName === "warn") {
-      await interaction.deferReply();
-      const id = member.id;
-      const reason = interaction.options.getString("reason");
-
-      db[id] = (db[id] || 0) + 1;
-      saveDB(db);
-
-      if (db[id] >= 3) {
-        await member.timeout(86400000, "3 warns");
-        db[id] = 0;
-        saveDB(db);
-        return interaction.editReply(`⚠️ 3 warns → 1 DAY TIMEOUT`);
-      }
-
-      return interaction.editReply(`⚠️ Warned | Total: ${db[id]} | ${reason}`);
-    }
-
-    if (interaction.commandName === "unwarn") {
-      await interaction.deferReply();
-      const id = member.id;
-
-      db[id] = Math.max((db[id] || 0) - 1, 0);
-      saveDB(db);
-
-      return interaction.editReply(`✅ Warn removed | Total: ${db[id]}`);
-    }
-
+    // ===== PURGE =====
     if (interaction.commandName === "purge") {
-      await interaction.deferReply({ ephemeral: true });
       const amount = interaction.options.getInteger("amount");
-
-      if (amount < 1 || amount > 100) {
-        return interaction.editReply("❌ 1-100 only");
-      }
 
       await interaction.channel.bulkDelete(amount, true);
       return interaction.editReply(`🧹 Deleted ${amount}`);
     }
 
-  } catch (err) {
-    console.error("❌ COMMAND ERROR:", err);
+    if (!member) return interaction.editReply("❌ User not found");
 
-    if (interaction.deferred) {
-      return interaction.editReply("❌ Error");
-    } else {
-      return interaction.reply({ content: "❌ Error", ephemeral: true });
+    // ===== KICK =====
+    if (interaction.commandName === "kick") {
+      const reason = interaction.options.getString("reason");
+      await member.kick(reason);
+      return interaction.editReply(`👢 ${member} kicked\nReason: ${reason}`);
     }
+
+    // ===== BAN =====
+    if (interaction.commandName === "ban") {
+      const reason = interaction.options.getString("reason");
+      await member.ban({ reason });
+      return interaction.editReply(`🔨 ${member} banned\nReason: ${reason}`);
+    }
+
+    // ===== TIMEOUT =====
+    if (interaction.commandName === "timeout") {
+      const time = interaction.options.getInteger("time");
+      const reason = interaction.options.getString("reason");
+
+      await member.timeout(time * 60 * 1000, reason);
+
+      return interaction.editReply(
+        `⏱️ ${member}\nTime: ${time} minutes\nReason: ${reason}`
+      );
+    }
+
+    // ===== REMOVE TIMEOUT =====
+    if (interaction.commandName === "removetimeout") {
+      await member.timeout(null);
+      return interaction.editReply(`✅ Timeout removed from ${member}`);
+    }
+
+    // ===== WARN =====
+    if (interaction.commandName === "warn") {
+      const id = member.id;
+      const count = (warns.get(id) || 0) + 1;
+      warns.set(id, count);
+
+      if (count >= 3) {
+        await member.timeout(24 * 60 * 60 * 1000, "3 warns reached");
+        warns.set(id, 0);
+
+        return interaction.editReply(
+          `⚠️ ${member} reached 3 warns → Timeout 1 day`
+        );
+      }
+
+      return interaction.editReply(`⚠️ ${member} warned (${count}/3)`);
+    }
+
+    // ===== UNWARN =====
+    if (interaction.commandName === "unwarn") {
+      const id = member.id;
+      const count = Math.max((warns.get(id) || 0) - 1, 0);
+      warns.set(id, count);
+
+      return interaction.editReply(`✅ Warn removed (${count}/3)`);
+    }
+
+  } catch (err) {
+    console.error("❌ ERROR:", err);
+    return interaction.editReply("❌ Error occurred");
   }
 });
 
-// ===== FORCE LOGIN =====
+// ===== LOGIN =====
 console.log("🔐 Attempting login...");
-
 client.login(process.env.DISCORD_BOT_TOKEN)
   .then(() => console.log("✅ LOGIN SUCCESS"))
   .catch(err => console.error("❌ LOGIN FAILED:", err));
