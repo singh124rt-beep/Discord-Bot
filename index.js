@@ -15,33 +15,35 @@ if (!process.env.DISCORD_BOT_TOKEN) {
   console.log("❌ TOKEN MISSING");
   process.exit(1);
 }
-
 if (!process.env.MONGO_URI) {
   console.log("❌ MONGO_URI MISSING");
   process.exit(1);
 }
-
-// ===== MONGODB =====
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch(err => console.error("❌ MongoDB Error:", err));
-
-const warnSchema = new mongoose.Schema({
-  userId: String,
-  warns: { type: Number, default: 0 }
-});
-
-const Warn = mongoose.model("Warn", warnSchema);
 
 // ===== KEEP ALIVE =====
 const app = express();
 app.get("/", (req, res) => res.send("Bot Alive ✅"));
 app.listen(3000, () => console.log("🌐 Web server running"));
 
+// ===== MONGODB =====
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch(err => console.log("❌ Mongo Error:", err));
+
+// ===== WARN SCHEMA =====
+const warnSchema = new mongoose.Schema({
+  userId: String,
+  warns: Number
+});
+const Warn = mongoose.model("Warn", warnSchema);
+
 // ===== CLIENT =====
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
+
+// ===== AUTO ROLE ID =====
+const AUTO_ROLE_ID = "1366502670788984902";
 
 // ===== ALLOWED USERS =====
 const allowedUsers = [
@@ -50,139 +52,76 @@ const allowedUsers = [
   "1335285604476522529"
 ];
 
+// ===== AUTO ROLE ON JOIN =====
+client.on("guildMemberAdd", async (member) => {
+  try {
+    const role = member.guild.roles.cache.get(AUTO_ROLE_ID);
+    if (role) {
+      await member.roles.add(role);
+      console.log(`✅ Role given to ${member.user.tag}`);
+    }
+  } catch (err) {
+    console.log("❌ Auto role error:", err);
+  }
+});
+
 // ===== COMMANDS =====
 const commands = [
 
-  new SlashCommandBuilder()
-    .setName("ping")
-    .setDescription("Check bot"),
+  new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addChannelOption(o =>
-      o.setName("channel")
-        .setDescription("Channel to send")
-        .setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("message")
-        .setDescription("Message")
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("role")
-    .setDescription("Give multiple roles")
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User")
-        .setRequired(true)
-    )
-    .addRoleOption(o =>
-      o.setName("role1")
-        .setDescription("Role 1")
-        .setRequired(true)
-    )
-    .addRoleOption(o =>
-      o.setName("role2")
-        .setDescription("Role 2")
-    )
-    .addRoleOption(o =>
-      o.setName("role3")
-        .setDescription("Role 3")
-    )
-    .addRoleOption(o =>
-      o.setName("role4")
-        .setDescription("Role 4")
-    )
-    .addRoleOption(o =>
-      o.setName("role5")
-        .setDescription("Role 5")
-    ),
+    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
+    .addChannelOption(o => o.setName("channel").setDescription("Select channel").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User to kick")
-        .setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("reason")
-        .setDescription("Reason")
-        .setRequired(true)
-    ),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban user")
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User to ban")
-        .setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("reason")
-        .setDescription("Reason")
-        .setRequired(true)
-    ),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
     .setDescription("Timeout user")
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User")
-        .setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o.setName("time")
-        .setDescription("Time in minutes")
-        .setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("reason")
-        .setDescription("Reason")
-        .setRequired(true)
-    ),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("removetimeout")
     .setDescription("Remove timeout")
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User")
-        .setRequired(true)
-    ),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User")
-        .setRequired(true)
-    ),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("unwarn")
     .setDescription("Remove warn")
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User")
-        .setRequired(true)
-    ),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o =>
-      o.setName("amount")
-        .setDescription("1-100")
-        .setRequired(true)
-    )
+    .addIntegerOption(o => o.setName("amount").setDescription("1-100").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("role")
+    .setDescription("Give multiple roles")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
+    .addRoleOption(o => o.setName("role2").setDescription("Role"))
+    .addRoleOption(o => o.setName("role3").setDescription("Role"))
 
 ].map(c => c.toJSON());
 
@@ -204,7 +143,7 @@ client.once("ready", async () => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply();
 
   try {
 
@@ -221,30 +160,11 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== ANNOUNCE =====
     if (interaction.commandName === "announce") {
-      const channel = interaction.options.getChannel("channel");
       const msg = interaction.options.getString("message");
+      const channel = interaction.options.getChannel("channel");
 
-      await interaction.editReply(`✅ Sent in ${channel}`);
-      return channel.send(msg);
-    }
-
-    // ===== ROLE =====
-    if (interaction.commandName === "role") {
-      const user = interaction.options.getMember("user");
-
-      const roles = [
-        interaction.options.getRole("role1"),
-        interaction.options.getRole("role2"),
-        interaction.options.getRole("role3"),
-        interaction.options.getRole("role4"),
-        interaction.options.getRole("role5")
-      ].filter(Boolean);
-
-      for (const role of roles) {
-        await user.roles.add(role);
-      }
-
-      return interaction.editReply(`✅ ${roles.length} roles given to ${user}`);
+      await channel.send(msg);
+      return interaction.editReply("✅ Sent!");
     }
 
     // ===== PURGE =====
@@ -285,27 +205,27 @@ client.on("interactionCreate", async (interaction) => {
     // ===== REMOVE TIMEOUT =====
     if (interaction.commandName === "removetimeout") {
       await member.timeout(null);
-      return interaction.editReply(`✅ Timeout removed from ${member}`);
+      return interaction.editReply(`✅ Timeout removed`);
     }
 
     // ===== WARN =====
     if (interaction.commandName === "warn") {
       let data = await Warn.findOne({ userId: member.id });
 
-      if (!data) data = new Warn({ userId: member.id });
+      if (!data) data = new Warn({ userId: member.id, warns: 0 });
 
-      data.warns += 1;
-      await data.save();
+      data.warns++;
 
       if (data.warns >= 3) {
         await member.timeout(24 * 60 * 60 * 1000, "3 warns reached");
         data.warns = 0;
         await data.save();
 
-        return interaction.editReply(`⚠️ ${member} reached 3 warns → Timeout 1 day`);
+        return interaction.editReply("⚠️ 3 warns → Timeout 1 day");
       }
 
-      return interaction.editReply(`⚠️ ${member} warned (${data.warns}/3)`);
+      await data.save();
+      return interaction.editReply(`⚠️ Warned (${data.warns}/3)`);
     }
 
     // ===== UNWARN =====
@@ -320,6 +240,21 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply(`✅ Warn removed (${data.warns}/3)`);
     }
 
+    // ===== MULTI ROLE =====
+    if (interaction.commandName === "role") {
+      const roles = [
+        interaction.options.getRole("role1"),
+        interaction.options.getRole("role2"),
+        interaction.options.getRole("role3")
+      ].filter(Boolean);
+
+      for (const role of roles) {
+        await member.roles.add(role);
+      }
+
+      return interaction.editReply(`✅ ${roles.length} roles added`);
+    }
+
   } catch (err) {
     console.error("❌ ERROR:", err);
     return interaction.editReply("❌ Error occurred");
@@ -328,6 +263,4 @@ client.on("interactionCreate", async (interaction) => {
 
 // ===== LOGIN =====
 console.log("🔐 Attempting login...");
-client.login(process.env.DISCORD_BOT_TOKEN)
-  .then(() => console.log("✅ LOGIN SUCCESS"))
-  .catch(err => console.error("❌ LOGIN FAILED:", err));
+client.login(process.env.DISCORD_BOT_TOKEN);
