@@ -37,51 +37,95 @@ const warns = new Map();
 
 // ===== COMMANDS =====
 const commands = [
-  new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
 
   new SlashCommandBuilder()
-    .setName("kick")
-    .setDescription("Kick user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .setName("ping")
+    .setDescription("Check bot"),
 
-  new SlashCommandBuilder()
-    .setName("ban")
-    .setDescription("Ban user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("timeout")
-    .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("removetimeout")
-    .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("warn")
-    .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("unwarn")
-    .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("purge")
-    .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setDescription("1-100").setRequired(true)),
-
+  // ===== ANNOUNCE WITH CHANNEL =====
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
+    .addChannelOption(o =>
+      o.setName("channel")
+        .setDescription("Select channel")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("message")
+        .setDescription("Message")
+        .setRequired(true)
+    ),
+
+  // ===== MULTI ROLE =====
+  new SlashCommandBuilder()
+    .setName("role")
+    .setDescription("Give multiple roles")
+    .addUserOption(o =>
+      o.setName("user").setDescription("User").setRequired(true)
+    )
+    .addRoleOption(o =>
+      o.setName("role1").setDescription("Role 1").setRequired(true)
+    )
+    .addRoleOption(o =>
+      o.setName("role2").setDescription("Role 2")
+    )
+    .addRoleOption(o =>
+      o.setName("role3").setDescription("Role 3")
+    )
+    .addRoleOption(o =>
+      o.setName("role4").setDescription("Role 4")
+    )
+    .addRoleOption(o =>
+      o.setName("role5").setDescription("Role 5")
+    ),
+
+  // ===== KICK =====
+  new SlashCommandBuilder()
+    .setName("kick")
+    .setDescription("Kick user")
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
+
+  // ===== BAN =====
+  new SlashCommandBuilder()
+    .setName("ban")
+    .setDescription("Ban user")
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
+
+  // ===== TIMEOUT =====
+  new SlashCommandBuilder()
+    .setName("timeout")
+    .setDescription("Timeout user")
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
+
+  // ===== REMOVE TIMEOUT =====
+  new SlashCommandBuilder()
+    .setName("removetimeout")
+    .setDescription("Remove timeout")
+    .addUserOption(o => o.setName("user").setRequired(true)),
+
+  // ===== WARN =====
+  new SlashCommandBuilder()
+    .setName("warn")
+    .setDescription("Warn user")
+    .addUserOption(o => o.setName("user").setRequired(true)),
+
+  // ===== UNWARN =====
+  new SlashCommandBuilder()
+    .setName("unwarn")
+    .setDescription("Remove warn")
+    .addUserOption(o => o.setName("user").setRequired(true)),
+
+  // ===== PURGE =====
+  new SlashCommandBuilder()
+    .setName("purge")
+    .setDescription("Delete messages")
+    .addIntegerOption(o => o.setName("amount").setRequired(true))
+
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
@@ -102,8 +146,7 @@ client.once("ready", async () => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  // 🚨 FIX FOR "APPLICATION DID NOT RESPOND"
-  await interaction.deferReply({ ephemeral: false });
+  await interaction.deferReply({ ephemeral: true });
 
   try {
 
@@ -118,17 +161,38 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply("🏓 Pong!");
     }
 
-    // ===== ANNOUNCE (NO 📢) =====
+    // ===== ANNOUNCE =====
     if (interaction.commandName === "announce") {
+      const channel = interaction.options.getChannel("channel");
       const msg = interaction.options.getString("message");
-      await interaction.editReply("✅ Sent!");
-      return interaction.channel.send(msg);
+
+      await interaction.editReply(`✅ Sent in ${channel}`);
+
+      return channel.send(msg); // no 📢
+    }
+
+    // ===== ROLE =====
+    if (interaction.commandName === "role") {
+      const user = interaction.options.getMember("user");
+
+      const roles = [
+        interaction.options.getRole("role1"),
+        interaction.options.getRole("role2"),
+        interaction.options.getRole("role3"),
+        interaction.options.getRole("role4"),
+        interaction.options.getRole("role5")
+      ].filter(Boolean);
+
+      for (const role of roles) {
+        await user.roles.add(role);
+      }
+
+      return interaction.editReply(`✅ ${roles.length} roles given to ${user}`);
     }
 
     // ===== PURGE =====
     if (interaction.commandName === "purge") {
       const amount = interaction.options.getInteger("amount");
-
       await interaction.channel.bulkDelete(amount, true);
       return interaction.editReply(`🧹 Deleted ${amount}`);
     }
