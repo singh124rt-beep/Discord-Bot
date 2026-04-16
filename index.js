@@ -1,4 +1,5 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const {
   Client,
   GatewayIntentBits,
@@ -8,12 +9,29 @@ const {
 } = require("discord.js");
 
 console.log("🔥 BOT STARTING...");
-console.log("TOKEN EXISTS:", !!process.env.DISCORD_BOT_TOKEN);
 
+// ===== ENV CHECK =====
 if (!process.env.DISCORD_BOT_TOKEN) {
   console.log("❌ TOKEN MISSING");
   process.exit(1);
 }
+
+if (!process.env.MONGO_URI) {
+  console.log("❌ MONGO_URI MISSING");
+  process.exit(1);
+}
+
+// ===== MONGODB =====
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch(err => console.error("❌ MongoDB Error:", err));
+
+const warnSchema = new mongoose.Schema({
+  userId: String,
+  warns: { type: Number, default: 0 }
+});
+
+const Warn = mongoose.model("Warn", warnSchema);
 
 // ===== KEEP ALIVE =====
 const app = express();
@@ -32,9 +50,6 @@ const allowedUsers = [
   "1335285604476522529"
 ];
 
-// ===== WARN STORAGE =====
-const warns = new Map();
-
 // ===== COMMANDS =====
 const commands = [
 
@@ -42,13 +57,12 @@ const commands = [
     .setName("ping")
     .setDescription("Check bot"),
 
-  // ===== ANNOUNCE WITH CHANNEL =====
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
     .addChannelOption(o =>
       o.setName("channel")
-        .setDescription("Select channel")
+        .setDescription("Channel to send")
         .setRequired(true)
     )
     .addStringOption(o =>
@@ -57,74 +71,118 @@ const commands = [
         .setRequired(true)
     ),
 
-  // ===== MULTI ROLE =====
   new SlashCommandBuilder()
     .setName("role")
     .setDescription("Give multiple roles")
     .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)
+      o.setName("user")
+        .setDescription("User")
+        .setRequired(true)
     )
     .addRoleOption(o =>
-      o.setName("role1").setDescription("Role 1").setRequired(true)
+      o.setName("role1")
+        .setDescription("Role 1")
+        .setRequired(true)
     )
     .addRoleOption(o =>
-      o.setName("role2").setDescription("Role 2")
+      o.setName("role2")
+        .setDescription("Role 2")
     )
     .addRoleOption(o =>
-      o.setName("role3").setDescription("Role 3")
+      o.setName("role3")
+        .setDescription("Role 3")
     )
     .addRoleOption(o =>
-      o.setName("role4").setDescription("Role 4")
+      o.setName("role4")
+        .setDescription("Role 4")
     )
     .addRoleOption(o =>
-      o.setName("role5").setDescription("Role 5")
+      o.setName("role5")
+        .setDescription("Role 5")
     ),
 
-  // ===== KICK =====
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User to kick")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("reason")
+        .setDescription("Reason")
+        .setRequired(true)
+    ),
 
-  // ===== BAN =====
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User to ban")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("reason")
+        .setDescription("Reason")
+        .setRequired(true)
+    ),
 
-  // ===== TIMEOUT =====
   new SlashCommandBuilder()
     .setName("timeout")
     .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User")
+        .setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName("time")
+        .setDescription("Time in minutes")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("reason")
+        .setDescription("Reason")
+        .setRequired(true)
+    ),
 
-  // ===== REMOVE TIMEOUT =====
   new SlashCommandBuilder()
     .setName("removetimeout")
     .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User")
+        .setRequired(true)
+    ),
 
-  // ===== WARN =====
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User")
+        .setRequired(true)
+    ),
 
-  // ===== UNWARN =====
   new SlashCommandBuilder()
     .setName("unwarn")
     .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User")
+        .setRequired(true)
+    ),
 
-  // ===== PURGE =====
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setRequired(true))
+    .addIntegerOption(o =>
+      o.setName("amount")
+        .setDescription("1-100")
+        .setRequired(true)
+    )
 
 ].map(c => c.toJSON());
 
@@ -167,8 +225,7 @@ client.on("interactionCreate", async (interaction) => {
       const msg = interaction.options.getString("message");
 
       await interaction.editReply(`✅ Sent in ${channel}`);
-
-      return channel.send(msg); // no 📢
+      return channel.send(msg);
     }
 
     // ===== ROLE =====
@@ -233,29 +290,34 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== WARN =====
     if (interaction.commandName === "warn") {
-      const id = member.id;
-      const count = (warns.get(id) || 0) + 1;
-      warns.set(id, count);
+      let data = await Warn.findOne({ userId: member.id });
 
-      if (count >= 3) {
+      if (!data) data = new Warn({ userId: member.id });
+
+      data.warns += 1;
+      await data.save();
+
+      if (data.warns >= 3) {
         await member.timeout(24 * 60 * 60 * 1000, "3 warns reached");
-        warns.set(id, 0);
+        data.warns = 0;
+        await data.save();
 
-        return interaction.editReply(
-          `⚠️ ${member} reached 3 warns → Timeout 1 day`
-        );
+        return interaction.editReply(`⚠️ ${member} reached 3 warns → Timeout 1 day`);
       }
 
-      return interaction.editReply(`⚠️ ${member} warned (${count}/3)`);
+      return interaction.editReply(`⚠️ ${member} warned (${data.warns}/3)`);
     }
 
     // ===== UNWARN =====
     if (interaction.commandName === "unwarn") {
-      const id = member.id;
-      const count = Math.max((warns.get(id) || 0) - 1, 0);
-      warns.set(id, count);
+      let data = await Warn.findOne({ userId: member.id });
 
-      return interaction.editReply(`✅ Warn removed (${count}/3)`);
+      if (!data) return interaction.editReply("❌ No warns");
+
+      data.warns = Math.max(data.warns - 1, 0);
+      await data.save();
+
+      return interaction.editReply(`✅ Warn removed (${data.warns}/3)`);
     }
 
   } catch (err) {
