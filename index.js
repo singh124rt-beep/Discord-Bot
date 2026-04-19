@@ -15,25 +15,27 @@ if (!process.env.DISCORD_BOT_TOKEN) {
   console.log("❌ TOKEN MISSING");
   process.exit(1);
 }
+if (!process.env.MONGO_URI) {
+  console.log("❌ MONGO_URI MISSING");
+  process.exit(1);
+}
 
 // ===== KEEP ALIVE =====
 const app = express();
 app.get("/", (req, res) => res.send("Bot Alive ✅"));
 app.listen(3000, () => console.log("🌐 Web server running"));
 
-// ===== MONGODB (SAFE) =====
-let dbConnected = false;
+// ===== MONGODB =====
+let dbReady = false;
 
-if (process.env.MONGO_URI) {
-  mongoose.connect(process.env.MONGO_URI)
-    .then(() => {
-      console.log("✅ MongoDB Connected");
-      dbConnected = true;
-    })
-    .catch(err => {
-      console.log("❌ Mongo Error:", err.message);
-    });
-}
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log("✅ MongoDB Connected");
+    dbReady = true;
+  })
+  .catch(err => {
+    console.log("❌ Mongo Error:", err.message);
+  });
 
 // ===== WARN SCHEMA =====
 const warnSchema = new mongoose.Schema({
@@ -44,7 +46,12 @@ const Warn = mongoose.model("Warn", warnSchema);
 
 // ===== CLIENT =====
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
 // ===== ALLOWED USERS =====
@@ -53,6 +60,9 @@ const allowedUsers = [
   "1378368132376297514",
   "1335285604476522529"
 ];
+
+// ===== ABUSE WORDS =====
+const badWords = ["madarchod", "bhosdike", "chutiya", "gandu"];
 
 // ===== COMMANDS =====
 const commands = [
@@ -64,6 +74,16 @@ const commands = [
     .setDescription("Send announcement")
     .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
     .addChannelOption(o => o.setName("channel").setDescription("Channel").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("warn")
+    .setDescription("Warn user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("unwarn")
+    .setDescription("Remove warn")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
@@ -83,21 +103,6 @@ const commands = [
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("removetimeout")
-    .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("warn")
-    .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("unwarn")
-    .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
@@ -128,6 +133,30 @@ client.once("ready", async () => {
   console.log("✅ COMMANDS REGISTERED");
 });
 
+// ===== ANTI-ABUSE + ANTI-TAG =====
+client.on("messageCreate", async (msg) => {
+  if (msg.author.bot) return;
+
+  // 🚫 Abuse detection
+  const content = msg.content.toLowerCase();
+  if (badWords.some(word => content.includes(word))) {
+    try {
+      await msg.delete();
+      await msg.member.timeout(24 * 60 * 60 * 1000, "Abuse detected");
+      msg.channel.send(`🚫 ${msg.author} abused → Timeout 24h`);
+    } catch {}
+  }
+
+  // 🚫 Mass mention
+  if (msg.mentions.users.size >= 5) {
+    try {
+      await msg.delete();
+      await msg.member.timeout(24 * 60 * 60 * 1000, "Mass mention");
+      msg.channel.send(`🚫 ${msg.author} tag spam → Timeout`);
+    } catch {}
+  }
+});
+
 // ===== COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
@@ -156,66 +185,24 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply("✅ Sent!");
     }
 
-    // ===== PURGE =====
-    if (interaction.commandName === "purge") {
-      const amount = interaction.options.getInteger("amount");
-      await interaction.channel.bulkDelete(amount, true);
-      return interaction.editReply(`🧹 Deleted ${amount}`);
-    }
-
-    if (!member) return interaction.editReply("❌ User not found");
-
-    // ===== KICK =====
-    if (interaction.commandName === "kick") {
-      const reason = interaction.options.getString("reason");
-      await member.kick(reason);
-      return interaction.editReply(`👢 ${member} kicked\nReason: ${reason}`);
-    }
-
-    // ===== BAN =====
-    if (interaction.commandName === "ban") {
-      const reason = interaction.options.getString("reason");
-      await member.ban({ reason });
-      return interaction.editReply(`🔨 ${member} banned\nReason: ${reason}`);
-    }
-
-    // ===== TIMEOUT =====
-    if (interaction.commandName === "timeout") {
-      const time = interaction.options.getInteger("time");
-      const reason = interaction.options.getString("reason");
-
-      await member.timeout(time * 60 * 1000, reason);
-
-      return interaction.editReply(
-        `⏱️ ${member}\nTime: ${time} minutes\nReason: ${reason}`
-      );
-    }
-
-    // ===== REMOVE TIMEOUT =====
-    if (interaction.commandName === "removetimeout") {
-      await member.timeout(null);
-      return interaction.editReply("✅ Timeout removed");
-    }
-
     // ===== WARN =====
     if (interaction.commandName === "warn") {
 
-      if (!dbConnected) {
+      if (!dbReady) {
         return interaction.editReply("⚠️ Database not connected");
       }
 
       let data = await Warn.findOne({ userId: member.id });
-
       if (!data) data = new Warn({ userId: member.id, warns: 0 });
 
       data.warns++;
 
       if (data.warns >= 3) {
-        await member.timeout(24 * 60 * 60 * 1000, "3 warns reached");
+        await member.timeout(24 * 60 * 60 * 1000, "3 warns");
         data.warns = 0;
         await data.save();
 
-        return interaction.editReply("⚠️ 3 warns → Timeout 1 day");
+        return interaction.editReply("⚠️ 3 warns → Timeout 24h");
       }
 
       await data.save();
@@ -224,11 +211,6 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== UNWARN =====
     if (interaction.commandName === "unwarn") {
-
-      if (!dbConnected) {
-        return interaction.editReply("⚠️ Database not connected");
-      }
-
       let data = await Warn.findOne({ userId: member.id });
 
       if (!data) return interaction.editReply("❌ No warns");
@@ -239,8 +221,16 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply(`✅ Warn removed (${data.warns}/3)`);
     }
 
+    // ===== PURGE =====
+    if (interaction.commandName === "purge") {
+      const amount = interaction.options.getInteger("amount");
+      await interaction.channel.bulkDelete(amount, true);
+      return interaction.editReply(`🧹 Deleted ${amount}`);
+    }
+
     // ===== ROLE =====
     if (interaction.commandName === "role") {
+
       const roles = [
         interaction.options.getRole("role1"),
         interaction.options.getRole("role2"),
@@ -248,18 +238,43 @@ client.on("interactionCreate", async (interaction) => {
       ].filter(Boolean);
 
       for (const role of roles) {
+        if (interaction.guild.members.me.roles.highest.position <= role.position) {
+          return interaction.editReply(`❌ Cannot give ${role.name}`);
+        }
         await member.roles.add(role);
       }
 
-      return interaction.editReply(`✅ ${roles.length} roles added`);
+      return interaction.editReply(`✅ Roles added`);
+    }
+
+    // ===== KICK =====
+    if (interaction.commandName === "kick") {
+      const reason = interaction.options.getString("reason");
+      await member.kick(reason);
+      return interaction.editReply("👢 User kicked");
+    }
+
+    // ===== BAN =====
+    if (interaction.commandName === "ban") {
+      const reason = interaction.options.getString("reason");
+      await member.ban({ reason });
+      return interaction.editReply("🔨 User banned");
+    }
+
+    // ===== TIMEOUT =====
+    if (interaction.commandName === "timeout") {
+      const time = interaction.options.getInteger("time");
+      const reason = interaction.options.getString("reason");
+
+      await member.timeout(time * 60 * 1000, reason);
+      return interaction.editReply(`⏱️ Timeout ${time} min`);
     }
 
   } catch (err) {
-    console.error("❌ ERROR:", err);
+    console.error("ERROR:", err);
     return interaction.editReply("❌ Error occurred");
   }
 });
 
 // ===== LOGIN =====
-console.log("🔐 Attempting login...");
 client.login(process.env.DISCORD_BOT_TOKEN);
