@@ -15,31 +15,30 @@ if (!process.env.DISCORD_BOT_TOKEN) {
   console.log("❌ TOKEN MISSING");
   process.exit(1);
 }
-if (!process.env.MONGO_URI) {
-  console.log("❌ MONGO_URI MISSING");
-  process.exit(1);
-}
 
 // ===== KEEP ALIVE =====
 const app = express();
 app.get("/", (req, res) => res.send("Bot Alive ✅"));
 app.listen(3000, () => console.log("🌐 Web server running"));
 
-// ===== MONGODB =====
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch(err => console.log("❌ Mongo Error:", err));
+// ===== MONGODB (SAFE) =====
+let dbConnected = false;
 
-// ===== WARN SCHEMA (ADVANCED) =====
+if (process.env.MONGO_URI) {
+  mongoose.connect(process.env.MONGO_URI)
+    .then(() => {
+      console.log("✅ MongoDB Connected");
+      dbConnected = true;
+    })
+    .catch(err => {
+      console.log("❌ Mongo Error:", err.message);
+    });
+}
+
+// ===== WARN SCHEMA =====
 const warnSchema = new mongoose.Schema({
   userId: String,
-  warns: [
-    {
-      reason: String,
-      moderator: String,
-      date: { type: Date, default: Date.now }
-    }
-  ]
+  warns: Number
 });
 const Warn = mongoose.model("Warn", warnSchema);
 
@@ -54,35 +53,6 @@ const allowedUsers = [
   "1378368132376297514",
   "1335285604476522529"
 ];
-
-// ===== ANTI-ABUSE =====
-const actionTracker = new Map();
-const ABUSE_LIMIT = 3;
-const ABUSE_TIME = 10000;
-
-function checkAbuse(userId) {
-  const now = Date.now();
-
-  if (!actionTracker.has(userId)) {
-    actionTracker.set(userId, { count: 1, time: now });
-    return false;
-  }
-
-  let data = actionTracker.get(userId);
-
-  if (now - data.time < ABUSE_TIME) {
-    data.count++;
-
-    if (data.count >= ABUSE_LIMIT) {
-      actionTracker.delete(userId);
-      return true;
-    }
-  } else {
-    actionTracker.set(userId, { count: 1, time: now });
-  }
-
-  return false;
-}
 
 // ===== COMMANDS =====
 const commands = [
@@ -122,17 +92,11 @@ const commands = [
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("warns")
-    .setDescription("Check warn history")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("unwarn")
-    .setDescription("Remove last warn")
+    .setDescription("Remove warn")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
@@ -168,7 +132,7 @@ client.once("ready", async () => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  await interaction.deferReply();
+  await interaction.deferReply({ ephemeral: true });
 
   try {
 
@@ -178,10 +142,12 @@ client.on("interactionCreate", async (interaction) => {
 
     const member = interaction.options.getMember("user");
 
+    // ===== PING =====
     if (interaction.commandName === "ping") {
       return interaction.editReply("🏓 Pong!");
     }
 
+    // ===== ANNOUNCE =====
     if (interaction.commandName === "announce") {
       const msg = interaction.options.getString("message");
       const channel = interaction.options.getChannel("channel");
@@ -190,6 +156,7 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply("✅ Sent!");
     }
 
+    // ===== PURGE =====
     if (interaction.commandName === "purge") {
       const amount = interaction.options.getInteger("amount");
       await interaction.channel.bulkDelete(amount, true);
@@ -198,26 +165,21 @@ client.on("interactionCreate", async (interaction) => {
 
     if (!member) return interaction.editReply("❌ User not found");
 
-    // ===== ANTI-ABUSE =====
-    if (["kick", "ban", "timeout"].includes(interaction.commandName)) {
-      if (checkAbuse(interaction.user.id)) {
-        await interaction.member.timeout(24 * 60 * 60 * 1000, "Abuse detected");
-        return interaction.editReply("🚨 Abuse detected → 24h timeout");
-      }
-    }
-
+    // ===== KICK =====
     if (interaction.commandName === "kick") {
       const reason = interaction.options.getString("reason");
       await member.kick(reason);
       return interaction.editReply(`👢 ${member} kicked\nReason: ${reason}`);
     }
 
+    // ===== BAN =====
     if (interaction.commandName === "ban") {
       const reason = interaction.options.getString("reason");
       await member.ban({ reason });
       return interaction.editReply(`🔨 ${member} banned\nReason: ${reason}`);
     }
 
+    // ===== TIMEOUT =====
     if (interaction.commandName === "timeout") {
       const time = interaction.options.getInteger("time");
       const reason = interaction.options.getString("reason");
@@ -225,10 +187,11 @@ client.on("interactionCreate", async (interaction) => {
       await member.timeout(time * 60 * 1000, reason);
 
       return interaction.editReply(
-        `⏱️ ${member}\nTime: ${time} min\nReason: ${reason}`
+        `⏱️ ${member}\nTime: ${time} minutes\nReason: ${reason}`
       );
     }
 
+    // ===== REMOVE TIMEOUT =====
     if (interaction.commandName === "removetimeout") {
       await member.timeout(null);
       return interaction.editReply("✅ Timeout removed");
@@ -236,60 +199,44 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== WARN =====
     if (interaction.commandName === "warn") {
-      const reason = interaction.options.getString("reason");
+
+      if (!dbConnected) {
+        return interaction.editReply("⚠️ Database not connected");
+      }
 
       let data = await Warn.findOne({ userId: member.id });
-      if (!data) data = new Warn({ userId: member.id, warns: [] });
 
-      data.warns.push({
-        reason,
-        moderator: interaction.user.tag
-      });
+      if (!data) data = new Warn({ userId: member.id, warns: 0 });
 
-      if (data.warns.length >= 3) {
+      data.warns++;
+
+      if (data.warns >= 3) {
         await member.timeout(24 * 60 * 60 * 1000, "3 warns reached");
-        data.warns = [];
+        data.warns = 0;
         await data.save();
 
-        return interaction.editReply(`⚠️ ${member} → 3 warns → 24h timeout`);
+        return interaction.editReply("⚠️ 3 warns → Timeout 1 day");
       }
 
       await data.save();
-
-      return interaction.editReply(
-        `⚠️ ${member}\nReason: ${reason}\nWarns: ${data.warns.length}/3`
-      );
-    }
-
-    // ===== WARNS =====
-    if (interaction.commandName === "warns") {
-      let data = await Warn.findOne({ userId: member.id });
-
-      if (!data || data.warns.length === 0) {
-        return interaction.editReply("✅ No warns");
-      }
-
-      let text = data.warns
-        .map((w, i) => `${i + 1}. ${w.reason} | ${w.moderator}`)
-        .join("\n");
-
-      return interaction.editReply(`⚠️ Warn History:\n${text}`);
+      return interaction.editReply(`⚠️ Warned (${data.warns}/3)`);
     }
 
     // ===== UNWARN =====
     if (interaction.commandName === "unwarn") {
-      let data = await Warn.findOne({ userId: member.id });
 
-      if (!data || data.warns.length === 0) {
-        return interaction.editReply("❌ No warns");
+      if (!dbConnected) {
+        return interaction.editReply("⚠️ Database not connected");
       }
 
-      data.warns.pop();
+      let data = await Warn.findOne({ userId: member.id });
+
+      if (!data) return interaction.editReply("❌ No warns");
+
+      data.warns = Math.max(data.warns - 1, 0);
       await data.save();
 
-      return interaction.editReply(
-        `✅ Removed warn (${data.warns.length}/3)`
-      );
+      return interaction.editReply(`✅ Warn removed (${data.warns}/3)`);
     }
 
     // ===== ROLE =====
