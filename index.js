@@ -11,7 +11,7 @@ const {
 
 console.log("🔥 BOT STARTING...");
 
-// ===== ENV =====
+// ===== ENV CHECK =====
 if (!process.env.DISCORD_BOT_TOKEN) process.exit(1);
 if (!process.env.MONGO_URI) process.exit(1);
 
@@ -21,12 +21,8 @@ app.get("/", (req, res) => res.send("Alive"));
 app.listen(3000);
 
 // ===== DB =====
-let dbReady = false;
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log("Mongo Connected");
-    dbReady = true;
-  })
+  .then(() => console.log("Mongo Connected"))
   .catch(err => console.log(err));
 
 // ===== WARN MODEL =====
@@ -55,7 +51,9 @@ const ADM_ROLE = "adm";
 // ===== COMMANDS =====
 const commands = [
 
-new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
+new SlashCommandBuilder()
+.setName("ping")
+.setDescription("Check bot"),
 
 new SlashCommandBuilder()
 .setName("announce")
@@ -106,7 +104,9 @@ new SlashCommandBuilder()
 new SlashCommandBuilder()
 .setName("purge")
 .setDescription("Delete messages")
-.addIntegerOption(o => o.setName("amount").setDescription("1-100").setRequired(true))
+.addIntegerOption(o =>
+  o.setName("amount").setDescription("1-100").setRequired(true)
+)
 
 ].map(c => c.toJSON());
 
@@ -115,10 +115,13 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN)
 // ===== READY =====
 client.once("ready", async () => {
   console.log(`Logged in: ${client.user.tag}`);
-  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+  await rest.put(
+    Routes.applicationCommands(client.user.id),
+    { body: commands }
+  );
 });
 
-// ===== COMMAND HANDLER =====
+// ===== HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -133,10 +136,12 @@ client.on("interactionCreate", async (interaction) => {
 
     const isAllowed = allowedUsers.includes(userId);
 
+    // ADM ONLY
     if (["purge"].includes(interaction.commandName)) {
       if (!isAdm) return interaction.reply("❌ Only ADM");
     }
 
+    // STAFF ONLY
     if (["kick","ban","warn","unwarn","role","timeout","announce"].includes(interaction.commandName)) {
       if (!isAllowed) return interaction.reply("❌ No permission");
     }
@@ -156,7 +161,6 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== WARN =====
     if (interaction.commandName === "warn") {
-      if (!dbReady) return interaction.reply("⚠️ DB not ready");
 
       let data = await Warn.findOne({ userId });
       if (!data) data = new Warn({ userId, warns: 0 });
@@ -165,7 +169,7 @@ client.on("interactionCreate", async (interaction) => {
       await data.save();
 
       if (data.warns >= 3) {
-        await member.timeout(86400000);
+        await interaction.member.timeout(86400000);
         data.warns = 0;
         await data.save();
         return interaction.reply("⚠️ 3 warns → Timeout");
@@ -215,7 +219,7 @@ client.on("interactionCreate", async (interaction) => {
 
   } catch (err) {
     console.error(err);
-    return interaction.reply("❌ Error");
+    return interaction.reply("❌ Error occurred");
   }
 });
 
