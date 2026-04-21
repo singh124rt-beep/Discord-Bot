@@ -1,7 +1,5 @@
 const express = require("express");
 const mongoose = require("mongoose");
-const fs = require("fs");
-const prism = require("prism-media");
 
 const {
   Client,
@@ -10,17 +8,14 @@ const {
   Routes,
   SlashCommandBuilder,
   ChannelType,
-  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle
 } = require("discord.js");
 
-const { joinVoiceChannel } = require("@discordjs/voice");
-
 console.log("🔥 BOT STARTING...");
 
-// ===== ENV CHECK =====
+// ===== ENV =====
 if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing DISCORD_BOT_TOKEN");
 if (!process.env.MONGO_URI) throw new Error("Missing MONGO_URI");
 
@@ -45,82 +40,57 @@ const Warn = mongoose.model("Warn", warnSchema);
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildVoiceStates
+    GatewayIntentBits.GuildMembers
   ]
 });
 
-// ===== PERMISSION USERS =====
+// ===== ALLOWED USERS =====
 const allowedUsers = [
   "1390273593040048220",
-  "1448606724100456459"
+  "1448606724100456459",
+  "1420063137838923868"
 ];
 
-// ===== RECORD STORAGE =====
-const recordings = new Map();
-
-// ===== COMMANDS (FIXED - NO UNDEFINED ERRORS) =====
+// ===== COMMANDS =====
 const commands = [
 
   new SlashCommandBuilder()
     .setName("ping")
-    .setDescription("Check bot status"),
+    .setDescription("Check bot"),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").setDescription("Channel").setRequired(true)),
+    .addStringOption(o =>
+      o.setName("message").setDescription("Message").setRequired(true))
+    .addChannelOption(o =>
+      o.setName("channel").setDescription("Channel").setRequired(true)
+        .addChannelTypes(ChannelType.GuildText)
+    ),
 
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o =>
+      o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o =>
+      o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("timeout")
-    .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("role")
-    .setDescription("Give roles")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
-    .addRoleOption(o => o.setName("role2").setDescription("Role"))
-    .addRoleOption(o => o.setName("role3").setDescription("Role")),
+    .addUserOption(o =>
+      o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setDescription("1-100").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("record")
-    .setDescription("Start CRAIG recording")
-    .addChannelOption(o =>
-      o.setName("channel")
-        .setDescription("Voice channel")
-        .setRequired(true)
-        .addChannelTypes(ChannelType.GuildVoice)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("stoprecord")
-    .setDescription("Stop recording")
+    .addIntegerOption(o =>
+      o.setName("amount").setDescription("1-100").setRequired(true))
 
 ].map(c => c.toJSON());
 
@@ -137,43 +107,24 @@ client.once("clientReady", async () => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
 
-  const data = recordings.get(interaction.guild.id);
-
-  if (interaction.customId === "stop_record") {
-    if (data) {
-      data.connection.destroy();
-      recordings.delete(interaction.guild.id);
-    }
-    return interaction.reply("⏹ Stopped");
-  }
-
-  if (interaction.customId === "download_record") {
-    if (!data || !data.files.length) {
-      return interaction.reply({ content: "❌ No recordings", ephemeral: true });
-    }
-
-    return interaction.reply({
-      content: "📁 Files:",
-      files: data.files.slice(0, 5)
+  if (interaction.customId === "dismiss_announce") {
+    return interaction.update({
+      content: "✅ Dismissed",
+      components: []
     });
   }
 });
 
-// ===== COMMAND HANDLER =====
+// ===== COMMANDS =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   try {
 
-    const member = interaction.member;
     const userId = interaction.user.id;
-
     const isAllowed = allowedUsers.includes(userId);
 
-    // ===== MOD CHECK =====
-    if (["kick", "ban", "warn", "timeout", "role", "announce"].includes(interaction.commandName)) {
-      if (!isAllowed) return interaction.reply("❌ No permission");
-    }
+    const member = interaction.options.getMember("user");
 
     // ===== PING =====
     if (interaction.commandName === "ping") {
@@ -182,16 +133,37 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== ANNOUNCE =====
     if (interaction.commandName === "announce") {
+
+      if (!isAllowed)
+        return interaction.reply({ content: "❌ No permission", ephemeral: true });
+
       const msg = interaction.options.getString("message");
       const channel = interaction.options.getChannel("channel");
-      await channel.send(msg);
-      return interaction.reply("✅ Sent");
+
+      await channel.send(`📢 **Announcement:**\n${msg}`);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("dismiss_announce")
+          .setLabel("Dismiss")
+          .setStyle(ButtonStyle.Secondary)
+      );
+
+      return interaction.reply({
+        content: "📢 Announcement sent!",
+        ephemeral: true,
+        components: [row]
+      });
     }
 
     // ===== WARN =====
     if (interaction.commandName === "warn") {
-      let data = await Warn.findOne({ userId });
-      if (!data) data = new Warn({ userId, warns: 0 });
+
+      if (!isAllowed)
+        return interaction.reply({ content: "❌ No permission", ephemeral: true });
+
+      let data = await Warn.findOne({ userId: member.id });
+      if (!data) data = new Warn({ userId: member.id, warns: 0 });
 
       data.warns++;
       await data.save();
@@ -199,128 +171,41 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply(`⚠️ Warned (${data.warns}/3)`);
     }
 
-    // ===== PURGE =====
-    if (interaction.commandName === "purge") {
-      const amount = interaction.options.getInteger("amount");
-      await interaction.channel.bulkDelete(amount, true);
-      return interaction.reply("🧹 Deleted");
-    }
-
-    // ===== ROLE =====
-    if (interaction.commandName === "role") {
-      const roles = [
-        interaction.options.getRole("role1"),
-        interaction.options.getRole("role2"),
-        interaction.options.getRole("role3")
-      ].filter(Boolean);
-
-      for (const r of roles) await member.roles.add(r);
-
-      return interaction.reply("✅ Roles added");
-    }
-
     // ===== KICK =====
     if (interaction.commandName === "kick") {
-      await member.kick(interaction.options.getString("reason"));
-      return interaction.reply("👢 Kicked");
+
+      if (!isAllowed)
+        return interaction.reply({ content: "❌ No permission", ephemeral: true });
+
+      await member.kick();
+      return interaction.reply("👢 User kicked");
     }
 
     // ===== BAN =====
     if (interaction.commandName === "ban") {
-      await member.ban({ reason: interaction.options.getString("reason") });
-      return interaction.reply("🔨 Banned");
+
+      if (!isAllowed)
+        return interaction.reply({ content: "❌ No permission", ephemeral: true });
+
+      await member.ban();
+      return interaction.reply("🔨 User banned");
     }
 
-    // ===== TIMEOUT =====
-    if (interaction.commandName === "timeout") {
-      const time = interaction.options.getInteger("time");
-      await member.timeout(time * 60000);
-      return interaction.reply("⏱️ Timed out");
-    }
+    // ===== PURGE =====
+    if (interaction.commandName === "purge") {
 
-    // ===== RECORD =====
-    if (interaction.commandName === "record") {
+      if (!isAllowed)
+        return interaction.reply({ content: "❌ No permission", ephemeral: true });
 
-      const channel = interaction.options.getChannel("channel");
+      const amount = interaction.options.getInteger("amount");
+      await interaction.channel.bulkDelete(amount, true);
 
-      const connection = joinVoiceChannel({
-        channelId: channel.id,
-        guildId: channel.guild.id,
-        adapterCreator: channel.guild.voiceAdapterCreator,
-        selfDeaf: false
-      });
-
-      const receiver = connection.receiver;
-
-      const state = {
-        connection,
-        receiver,
-        files: [],
-        speaking: new Set(),
-        startTime: Date.now(),
-        message: null
-      };
-
-      recordings.set(interaction.guild.id, state);
-
-      receiver.speaking.on("start", (userId) => {
-
-        const opus = receiver.subscribe(userId);
-
-        const decoder = new prism.opus.Decoder({
-          rate: 48000,
-          channels: 2,
-          frameSize: 960
-        });
-
-        const file = `rec-${userId}-${Date.now()}.pcm`;
-        const out = fs.createWriteStream(file);
-
-        opus.pipe(decoder).pipe(out);
-
-        state.files.push(file);
-        state.speaking.add(userId);
-      });
-
-      receiver.speaking.on("end", (userId) => {
-        state.speaking.delete(userId);
-      });
-
-      const embed = new EmbedBuilder()
-        .setTitle("🎙️ CRAIG RECORDING")
-        .setColor(0x57F287)
-        .setDescription(`🟢 Recording started\n📡 ${channel.name}`)
-        .setThumbnail("https://i.imgur.com/zFAITHB.jpeg");
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("stop_record")
-          .setLabel("⏹ Stop")
-          .setStyle(ButtonStyle.Danger),
-
-        new ButtonBuilder()
-          .setCustomId("download_record")
-          .setLabel("📥 Download")
-          .setStyle(ButtonStyle.Success)
-      );
-
-      return interaction.reply({ embeds: [embed], components: [row] });
-    }
-
-    // ===== STOP =====
-    if (interaction.commandName === "stoprecord") {
-      const state = recordings.get(interaction.guild.id);
-      if (!state) return interaction.reply("❌ Not recording");
-
-      state.connection.destroy();
-      recordings.delete(interaction.guild.id);
-
-      return interaction.reply("⏹ Stopped");
+      return interaction.reply({ content: `🧹 Deleted ${amount} messages`, ephemeral: true });
     }
 
   } catch (err) {
     console.error(err);
-    return interaction.reply("❌ Error");
+    return interaction.reply("❌ Error occurred");
   }
 });
 
