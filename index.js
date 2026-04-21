@@ -1,25 +1,13 @@
 const express = require("express");
 const mongoose = require("mongoose");
-const fs = require("fs");
-const prism = require("prism-media");
-
-const ffmpeg = require("fluent-ffmpeg");
-const ffmpegPath = require("ffmpeg-static");
-ffmpeg.setFfmpegPath(ffmpegPath);
 
 const {
   Client,
   GatewayIntentBits,
   REST,
   Routes,
-  SlashCommandBuilder,
-  ChannelType
+  SlashCommandBuilder
 } = require("discord.js");
-
-const {
-  joinVoiceChannel,
-  EndBehaviorType
-} = require("@discordjs/voice");
 
 console.log("🔥 BOT STARTING...");
 
@@ -35,7 +23,10 @@ app.listen(3000);
 // ===== DB =====
 let dbReady = false;
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => { console.log("Mongo Connected"); dbReady = true; })
+  .then(() => {
+    console.log("Mongo Connected");
+    dbReady = true;
+  })
   .catch(err => console.log(err));
 
 // ===== WARN MODEL =====
@@ -49,8 +40,7 @@ const Warn = mongoose.model("Warn", warnSchema);
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildVoiceStates
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -62,22 +52,20 @@ const allowedUsers = [
 
 const ADM_ROLE = "adm";
 
-// ===== CRAIG SYSTEM =====
-const recordings = new Map();
-const activeUsers = new Set();
-
-// ===== SLASH COMMANDS (FIXED - NO ERROR) =====
+// ===== COMMANDS =====
 const commands = [
 
-new SlashCommandBuilder()
-.setName("ping")
-.setDescription("Check bot"),
+new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
 
 new SlashCommandBuilder()
 .setName("announce")
 .setDescription("Send announcement")
-.addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-.addChannelOption(o => o.setName("channel").setDescription("Channel").setRequired(true)),
+.addStringOption(o =>
+  o.setName("message").setDescription("Message").setRequired(true)
+)
+.addChannelOption(o =>
+  o.setName("channel").setDescription("Channel").setRequired(true)
+),
 
 new SlashCommandBuilder()
 .setName("warn")
@@ -116,14 +104,6 @@ new SlashCommandBuilder()
 .addRoleOption(o => o.setName("role3").setDescription("Role")),
 
 new SlashCommandBuilder()
-.setName("join")
-.setDescription("Start recording"),
-
-new SlashCommandBuilder()
-.setName("stop")
-.setDescription("Stop recording"),
-
-new SlashCommandBuilder()
 .setName("purge")
 .setDescription("Delete messages")
 .addIntegerOption(o => o.setName("amount").setDescription("1-100").setRequired(true))
@@ -138,7 +118,7 @@ client.once("ready", async () => {
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 });
 
-// ===== MAIN HANDLER =====
+// ===== COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -147,14 +127,17 @@ client.on("interactionCreate", async (interaction) => {
     const member = interaction.member;
     const userId = interaction.user.id;
 
-    const isAdm = member.roles.cache.some(r => r.name.toLowerCase() === ADM_ROLE);
+    const isAdm = member.roles.cache.some(r =>
+      r.name.toLowerCase() === ADM_ROLE
+    );
+
     const isAllowed = allowedUsers.includes(userId);
 
-    if (["join","stop","purge"].includes(interaction.commandName)) {
+    if (["purge"].includes(interaction.commandName)) {
       if (!isAdm) return interaction.reply("❌ Only ADM");
     }
 
-    if (["kick","ban","warn","role","announce"].includes(interaction.commandName)) {
+    if (["kick","ban","warn","unwarn","role","timeout","announce"].includes(interaction.commandName)) {
       if (!isAllowed) return interaction.reply("❌ No permission");
     }
 
@@ -171,111 +154,24 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply("✅ Sent");
     }
 
-    // ===== JOIN (CRAIG FIXED) =====
-    if (interaction.commandName === "join") {
+    // ===== WARN =====
+    if (interaction.commandName === "warn") {
+      if (!dbReady) return interaction.reply("⚠️ DB not ready");
 
-      const channel = interaction.options.getChannel("channel");
+      let data = await Warn.findOne({ userId });
+      if (!data) data = new Warn({ userId, warns: 0 });
 
-      const connection = joinVoiceChannel({
-        channelId: channel.id,
-        guildId: channel.guild.id,
-        adapterCreator: channel.guild.voiceAdapterCreator,
-        selfDeaf: false
-      });
+      data.warns++;
+      await data.save();
 
-      const receiver = connection.receiver;
+      if (data.warns >= 3) {
+        await member.timeout(86400000);
+        data.warns = 0;
+        await data.save();
+        return interaction.reply("⚠️ 3 warns → Timeout");
+      }
 
-      recordings.set(channel.guild.id, {
-        connection,
-        receiver,
-        files: []
-      });
-
-      receiver.speaking.on("start", (userId) => {
-
-        if (activeUsers.has(userId)) return;
-        activeUsers.add(userId);
-
-        const data = recordings.get(channel.guild.id);
-        if (!data) return;
-
-        const opus = receiver.subscribe(userId);
-
-        const decoder = new prism.opus.Decoder({
-          rate: 48000,
-          channels: 2,
-          frameSize: 960
-        });
-
-        const pcm = `rec-${userId}-${Date.now()}.pcm`;
-        const wav = pcm.replace(".pcm", ".wav");
-
-        const out = fs.createWriteStream(pcm);
-
-        opus.pipe(decoder).pipe(out);
-
-        out.on("finish", () => {
-
-          ffmpeg(pcm)
-            .inputFormat("s16le")
-            .audioFrequency(48000)
-            .audioChannels(2)
-            .save(wav)
-            .on("end", () => {
-
-              if (fs.existsSync(pcm)) fs.unlinkSync(pcm);
-
-              const rec = recordings.get(channel.guild.id);
-              if (rec) rec.files.push(wav);
-
-              activeUsers.delete(userId);
-
-            });
-
-        });
-
-      });
-
-      return interaction.reply(`🎙️ Recording started in ${channel.name}`);
-    }
-
-    // ===== STOP (MERGE FIXED) =====
-    if (interaction.commandName === "stop") {
-
-      const data = recordings.get(interaction.guild.id);
-      if (!data) return interaction.reply("❌ No recording");
-
-      data.connection.destroy();
-      recordings.delete(interaction.guild.id);
-
-      const files = fs.readdirSync(".")
-        .filter(f => f.startsWith("rec-") && f.endsWith(".wav"));
-
-      if (!files.length) return interaction.reply("⚠️ No audio");
-
-      const output = `merged-${Date.now()}.wav`;
-
-      const ff = ffmpeg();
-
-      files.forEach(f => ff.input(f));
-
-      ff
-        .complexFilter([`amix=inputs=${files.length}:duration=longest`])
-        .audioFrequency(48000)
-        .audioChannels(2)
-        .save(output)
-        .on("end", () => {
-
-          files.forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
-
-          interaction.followUp({
-            content: "📁 FINAL AUDIO:",
-            files: [output]
-          });
-
-        });
-
-      return interaction.reply("⏹ Stopping...");
+      return interaction.reply(`⚠️ Warned (${data.warns}/3)`);
     }
 
     // ===== PURGE =====
