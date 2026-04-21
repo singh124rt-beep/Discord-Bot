@@ -51,14 +51,11 @@ const client = new Client({
 });
 
 // ===== PERMISSIONS =====
-
-// 🛡️ ONLY THESE USERS CAN USE MOD COMMANDS
 const allowedUsers = [
   "1390273593040048220",
   "1448606724100456459"
 ];
 
-// 👮 ADM ROLE NAME
 const ADM_ROLE = "adm";
 
 // ===== RECORD STORAGE =====
@@ -112,7 +109,6 @@ const commands = [
     .addRoleOption(o => o.setName("role2").setDescription("Role"))
     .addRoleOption(o => o.setName("role3").setDescription("Role")),
 
-  // 🎙️ JOIN
   new SlashCommandBuilder()
     .setName("join")
     .setDescription("Join and record VC")
@@ -136,8 +132,8 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
-// ===== READY =====
-client.once("ready", async () => {
+// ===== READY (FIXED) =====
+client.once("clientReady", async () => {
   console.log(`Logged in: ${client.user.tag}`);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 });
@@ -155,7 +151,7 @@ client.on("interactionCreate", async (interaction) => {
 
     const isAllowedUser = allowedUsers.includes(userId);
 
-    // 🎙️ ONLY ADM
+    // 🎙️ ADM ONLY
     if (["join", "stop", "purge"].includes(interaction.commandName)) {
       if (!isAdm) return interaction.reply("❌ Only ADM can use this");
     }
