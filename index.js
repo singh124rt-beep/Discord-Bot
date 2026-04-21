@@ -62,9 +62,13 @@ const commands = [
     .setName("announce")
     .setDescription("Send announcement")
     .addStringOption(o =>
-      o.setName("message").setDescription("Message").setRequired(true))
+      o.setName("message")
+        .setDescription("Message")
+        .setRequired(true))
     .addChannelOption(o =>
-      o.setName("channel").setDescription("Channel").setRequired(true)
+      o.setName("channel")
+        .setDescription("Channel")
+        .setRequired(true)
         .addChannelTypes(ChannelType.GuildText)
     ),
 
@@ -72,50 +76,67 @@ const commands = [
     .setName("warn")
     .setDescription("Warn user")
     .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)),
+      o.setName("user")
+        .setDescription("User")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
     .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)),
+      o.setName("user")
+        .setDescription("User")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban user")
     .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)),
+      o.setName("user")
+        .setDescription("User")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
     .addIntegerOption(o =>
-      o.setName("amount").setDescription("1-100").setRequired(true))
+      o.setName("amount")
+        .setDescription("1-100")
+        .setRequired(true))
 
 ].map(c => c.toJSON());
 
 // ===== REST =====
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
-// ===== READY =====
-client.once("clientReady", async () => {
-  console.log(`Logged in: ${client.user.tag}`);
-  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+// ===== READY EVENT (FIXED) =====
+client.once("ready", async () => {
+  console.log(`Logged in as ${client.user.tag}`);
+
+  try {
+    await rest.put(
+      Routes.applicationCommands(client.user.id),
+      { body: commands }
+    );
+    console.log("📦 Slash commands registered");
+  } catch (err) {
+    console.error(err);
+  }
 });
 
-// ===== BUTTONS =====
+// ===== BUTTON HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
 
   if (interaction.customId === "dismiss_announce") {
     return interaction.update({
-      content: "✅ Dismissed",
+      content: "✅ Announcement dismissed",
       components: []
     });
   }
 });
 
-// ===== COMMANDS =====
+// ===== COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -150,7 +171,7 @@ client.on("interactionCreate", async (interaction) => {
       );
 
       return interaction.reply({
-        content: "📢 Announcement sent!",
+        content: "📢 Announcement sent successfully!",
         ephemeral: true,
         components: [row]
       });
@@ -162,8 +183,8 @@ client.on("interactionCreate", async (interaction) => {
       if (!isAllowed)
         return interaction.reply({ content: "❌ No permission", ephemeral: true });
 
-      let data = await Warn.findOne({ userId: member.id });
-      if (!data) data = new Warn({ userId: member.id, warns: 0 });
+      let data = await Warn.findOne({ userId });
+      if (!data) data = new Warn({ userId, warns: 0 });
 
       data.warns++;
       await data.save();
@@ -200,7 +221,10 @@ client.on("interactionCreate", async (interaction) => {
       const amount = interaction.options.getInteger("amount");
       await interaction.channel.bulkDelete(amount, true);
 
-      return interaction.reply({ content: `🧹 Deleted ${amount} messages`, ephemeral: true });
+      return interaction.reply({
+        content: `🧹 Deleted ${amount} messages`,
+        ephemeral: true
+      });
     }
 
   } catch (err) {
