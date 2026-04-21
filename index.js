@@ -133,7 +133,7 @@ new SlashCommandBuilder()
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
 // ===== READY =====
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`Logged in: ${client.user.tag}`);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 });
