@@ -1,17 +1,29 @@
 const express = require("express");
 const mongoose = require("mongoose");
+const fs = require("fs");
+const prism = require("prism-media");
 
 const {
   Client,
   GatewayIntentBits,
   REST,
   Routes,
-  SlashCommandBuilder
+  SlashCommandBuilder,
+  ChannelType,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require("discord.js");
+
+const {
+  joinVoiceChannel,
+  EndBehaviorType
+} = require("@discordjs/voice");
 
 console.log("🔥 BOT STARTING...");
 
-// ===== ENV CHECK =====
+// ===== ENV =====
 if (!process.env.DISCORD_BOT_TOKEN) process.exit(1);
 if (!process.env.MONGO_URI) process.exit(1);
 
@@ -36,7 +48,8 @@ const Warn = mongoose.model("Warn", warnSchema);
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates
   ]
 });
 
@@ -46,33 +59,25 @@ const allowedUsers = [
   "1448606724100456459"
 ];
 
-const ADM_ROLE = "adm";
+const recordings = new Map();
+const activeUsers = new Set();
 
 // ===== COMMANDS =====
 const commands = [
 
-new SlashCommandBuilder()
-.setName("ping")
-.setDescription("Check bot"),
+new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
 
 new SlashCommandBuilder()
 .setName("announce")
 .setDescription("Send announcement")
 .addStringOption(o =>
-  o.setName("message").setDescription("Message").setRequired(true)
-)
+  o.setName("message").setDescription("Message").setRequired(true))
 .addChannelOption(o =>
-  o.setName("channel").setDescription("Channel").setRequired(true)
-),
+  o.setName("channel").setDescription("Channel").setRequired(true)),
 
 new SlashCommandBuilder()
 .setName("warn")
 .setDescription("Warn user")
-.addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-new SlashCommandBuilder()
-.setName("unwarn")
-.setDescription("Remove warn")
 .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
 new SlashCommandBuilder()
@@ -105,8 +110,23 @@ new SlashCommandBuilder()
 .setName("purge")
 .setDescription("Delete messages")
 .addIntegerOption(o =>
-  o.setName("amount").setDescription("1-100").setRequired(true)
-)
+  o.setName("amount").setDescription("1-100").setRequired(true)),
+
+// 🎙️ RECORD
+new SlashCommandBuilder()
+.setName("record")
+.setDescription("Start voice recording")
+.addChannelOption(o =>
+  o.setName("channel")
+  .setDescription("Voice channel")
+  .setRequired(true)
+  .addChannelTypes(ChannelType.GuildVoice)
+),
+
+// ⏹ STOP
+new SlashCommandBuilder()
+.setName("stoprecord")
+.setDescription("Stop recording")
 
 ].map(c => c.toJSON());
 
@@ -115,13 +135,36 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN)
 // ===== READY =====
 client.once("ready", async () => {
   console.log(`Logged in: ${client.user.tag}`);
-  await rest.put(
-    Routes.applicationCommands(client.user.id),
-    { body: commands }
-  );
+  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 });
 
-// ===== HANDLER =====
+// ===== BUTTON HANDLER =====
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  const data = recordings.get(interaction.guild.id);
+
+  if (interaction.customId === "stop_record") {
+    if (data) {
+      data.connection.destroy();
+      recordings.delete(interaction.guild.id);
+    }
+    return interaction.reply("⏹ Recording stopped");
+  }
+
+  if (interaction.customId === "download_record") {
+    if (!data || !data.files.length) {
+      return interaction.reply({ content: "⚠️ No files", ephemeral: true });
+    }
+
+    return interaction.reply({
+      content: "📁 Recordings:",
+      files: data.files.slice(0, 3)
+    });
+  }
+});
+
+// ===== COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -130,21 +173,7 @@ client.on("interactionCreate", async (interaction) => {
     const member = interaction.member;
     const userId = interaction.user.id;
 
-    const isAdm = member.roles.cache.some(r =>
-      r.name.toLowerCase() === ADM_ROLE
-    );
-
     const isAllowed = allowedUsers.includes(userId);
-
-    // ADM ONLY
-    if (["purge"].includes(interaction.commandName)) {
-      if (!isAdm) return interaction.reply("❌ Only ADM");
-    }
-
-    // STAFF ONLY
-    if (["kick","ban","warn","unwarn","role","timeout","announce"].includes(interaction.commandName)) {
-      if (!isAllowed) return interaction.reply("❌ No permission");
-    }
 
     // ===== PING =====
     if (interaction.commandName === "ping") {
@@ -167,13 +196,6 @@ client.on("interactionCreate", async (interaction) => {
 
       data.warns++;
       await data.save();
-
-      if (data.warns >= 3) {
-        await interaction.member.timeout(86400000);
-        data.warns = 0;
-        await data.save();
-        return interaction.reply("⚠️ 3 warns → Timeout");
-      }
 
       return interaction.reply(`⚠️ Warned (${data.warns}/3)`);
     }
@@ -215,6 +237,86 @@ client.on("interactionCreate", async (interaction) => {
       const time = interaction.options.getInteger("time");
       await member.timeout(time * 60000);
       return interaction.reply(`⏱️ Timeout ${time} min`);
+    }
+
+    // ===== RECORD =====
+    if (interaction.commandName === "record") {
+
+      const channel = interaction.options.getChannel("channel");
+
+      const connection = joinVoiceChannel({
+        channelId: channel.id,
+        guildId: channel.guild.id,
+        adapterCreator: channel.guild.voiceAdapterCreator,
+        selfDeaf: false
+      });
+
+      const receiver = connection.receiver;
+
+      recordings.set(channel.guild.id, {
+        connection,
+        receiver,
+        files: []
+      });
+
+      receiver.speaking.on("start", (userId) => {
+
+        if (activeUsers.has(userId)) return;
+        activeUsers.add(userId);
+
+        const data = recordings.get(channel.guild.id);
+        if (!data) return;
+
+        const opus = receiver.subscribe(userId);
+
+        const decoder = new prism.opus.Decoder({
+          rate: 48000,
+          channels: 2,
+          frameSize: 960
+        });
+
+        const file = `rec-${userId}-${Date.now()}.pcm`;
+        const out = fs.createWriteStream(file);
+
+        opus.pipe(decoder).pipe(out);
+
+        out.on("finish", () => {
+          activeUsers.delete(userId);
+          data.files.push(file);
+        });
+
+      });
+
+      const embed = new EmbedBuilder()
+        .setTitle("🎙️ Recording Active")
+        .setDescription(`Channel: ${channel.name}`)
+        .setColor(0x00ff99);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("stop_record")
+          .setLabel("⏹ Stop")
+          .setStyle(ButtonStyle.Danger),
+
+        new ButtonBuilder()
+          .setCustomId("download_record")
+          .setLabel("📥 Download")
+          .setStyle(ButtonStyle.Success)
+      );
+
+      return interaction.reply({ embeds: [embed], components: [row] });
+    }
+
+    // ===== STOP =====
+    if (interaction.commandName === "stoprecord") {
+
+      const data = recordings.get(interaction.guild.id);
+      if (!data) return interaction.reply("❌ Nothing recording");
+
+      data.connection.destroy();
+      recordings.delete(interaction.guild.id);
+
+      return interaction.reply("⏹ Recording stopped");
     }
 
   } catch (err) {
