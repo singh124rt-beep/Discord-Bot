@@ -24,7 +24,7 @@ const app = express();
 app.get("/", (req, res) => res.send("Alive"));
 app.listen(3000);
 
-// ===== MONGO =====
+// ===== DB =====
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("Mongo Connected"))
   .catch(console.error);
@@ -62,13 +62,9 @@ const commands = [
     .setName("announce")
     .setDescription("Send announcement")
     .addStringOption(o =>
-      o.setName("message")
-        .setDescription("Message")
-        .setRequired(true))
+      o.setName("message").setDescription("Message").setRequired(true))
     .addChannelOption(o =>
-      o.setName("channel")
-        .setDescription("Channel")
-        .setRequired(true)
+      o.setName("channel").setDescription("Channel").setRequired(true)
         .addChannelTypes(ChannelType.GuildText)
     ),
 
@@ -76,33 +72,51 @@ const commands = [
     .setName("warn")
     .setDescription("Warn user")
     .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User")
-        .setRequired(true)),
+      o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
     .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User")
-        .setRequired(true)),
+      o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban user")
     .addUserOption(o =>
-      o.setName("user")
-        .setDescription("User")
-        .setRequired(true)),
+      o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
     .addIntegerOption(o =>
-      o.setName("amount")
-        .setDescription("1-100")
-        .setRequired(true))
+      o.setName("amount").setDescription("1-100").setRequired(true)),
+
+  // ===== ADD ROLE =====
+  new SlashCommandBuilder()
+    .setName("addrole")
+    .setDescription("Add roles to user")
+    .addUserOption(o =>
+      o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o =>
+      o.setName("role1").setDescription("Role 1").setRequired(true))
+    .addRoleOption(o =>
+      o.setName("role2").setDescription("Role 2"))
+    .addRoleOption(o =>
+      o.setName("role3").setDescription("Role 3")),
+
+  // ===== REMOVE ROLE =====
+  new SlashCommandBuilder()
+    .setName("removerole")
+    .setDescription("Remove roles from user")
+    .addUserOption(o =>
+      o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o =>
+      o.setName("role1").setDescription("Role 1").setRequired(true))
+    .addRoleOption(o =>
+      o.setName("role2").setDescription("Role 2"))
+    .addRoleOption(o =>
+      o.setName("role3").setDescription("Role 3"))
 
 ].map(c => c.toJSON());
 
@@ -136,7 +150,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ===== COMMANDS =====
+// ===== COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -144,6 +158,7 @@ client.on("interactionCreate", async (interaction) => {
 
     const userId = interaction.user.id;
     const isAllowed = allowedUsers.includes(userId);
+
     const member = interaction.options.getMember("user");
 
     // ===== PING =====
@@ -198,7 +213,7 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "❌ No permission", ephemeral: true });
 
       await member.kick();
-      return interaction.reply("👢 User kicked");
+      return interaction.reply("👢 Kicked");
     }
 
     // ===== BAN =====
@@ -208,7 +223,7 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "❌ No permission", ephemeral: true });
 
       await member.ban();
-      return interaction.reply("🔨 User banned");
+      return interaction.reply("🔨 Banned");
     }
 
     // ===== PURGE =====
@@ -222,6 +237,50 @@ client.on("interactionCreate", async (interaction) => {
 
       return interaction.reply({
         content: `🧹 Deleted ${amount} messages`,
+        ephemeral: true
+      });
+    }
+
+    // ===== ADD ROLE =====
+    if (interaction.commandName === "addrole") {
+
+      if (!isAllowed)
+        return interaction.reply({ content: "❌ No permission", ephemeral: true });
+
+      const roles = [
+        interaction.options.getRole("role1"),
+        interaction.options.getRole("role2"),
+        interaction.options.getRole("role3")
+      ].filter(Boolean);
+
+      for (const role of roles) {
+        await member.roles.add(role);
+      }
+
+      return interaction.reply({
+        content: `✅ Added ${roles.length} role(s)`,
+        ephemeral: true
+      });
+    }
+
+    // ===== REMOVE ROLE =====
+    if (interaction.commandName === "removerole") {
+
+      if (!isAllowed)
+        return interaction.reply({ content: "❌ No permission", ephemeral: true });
+
+      const roles = [
+        interaction.options.getRole("role1"),
+        interaction.options.getRole("role2"),
+        interaction.options.getRole("role3")
+      ].filter(Boolean);
+
+      for (const role of roles) {
+        await member.roles.remove(role);
+      }
+
+      return interaction.reply({
+        content: `🗑️ Removed ${roles.length} role(s)`,
         ephemeral: true
       });
     }
