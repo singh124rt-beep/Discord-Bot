@@ -2,6 +2,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const fs = require("fs");
 const prism = require("prism-media");
+
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("ffmpeg-static");
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -12,7 +13,11 @@ const {
   REST,
   Routes,
   SlashCommandBuilder,
-  ChannelType
+  ChannelType,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require("discord.js");
 
 const {
@@ -61,64 +66,61 @@ const allowedUsers = [
 
 const ADM_ROLE = "adm";
 
-// ===== RECORD SYSTEM (CRAIG STYLE) =====
+// ===== CRAIG SYSTEM STORAGE =====
 const recordings = new Map();
 const activeUsers = new Set();
 
 // ===== COMMANDS =====
 const commands = [
-
   new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").setDescription("Channel").setRequired(true)),
+    .addStringOption(o => o.setName("message").setRequired(true))
+    .addChannelOption(o => o.setName("channel").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("unwarn")
     .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
     .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addIntegerOption(o => o.setName("time").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("role")
     .setDescription("Give roles")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
-    .addRoleOption(o => o.setName("role2").setDescription("Role"))
-    .addRoleOption(o => o.setName("role3").setDescription("Role")),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addRoleOption(o => o.setName("role1").setRequired(true))
+    .addRoleOption(o => o.setName("role2"))
+    .addRoleOption(o => o.setName("role3")),
 
   new SlashCommandBuilder()
     .setName("join")
-    .setDescription("Join and record VC")
+    .setDescription("Start recording")
     .addChannelOption(o =>
       o.setName("channel")
-        .setDescription("Select voice channel")
         .setRequired(true)
         .addChannelTypes(ChannelType.GuildVoice)
     ),
@@ -130,7 +132,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setDescription("1-100").setRequired(true))
+    .addIntegerOption(o => o.setName("amount").setRequired(true))
 
 ].map(c => c.toJSON());
 
@@ -148,58 +150,21 @@ client.on("interactionCreate", async (interaction) => {
 
   try {
 
+    const member = interaction.member;
     const userId = interaction.user.id;
 
-    const isAdm = interaction.member.roles.cache.some(r =>
-      r.name.toLowerCase() === ADM_ROLE
-    );
-
-    const isAllowedUser = allowedUsers.includes(userId);
+    const isAdm = member.roles.cache.some(r => r.name.toLowerCase() === ADM_ROLE);
+    const isAllowed = allowedUsers.includes(userId);
 
     if (["join", "stop", "purge"].includes(interaction.commandName)) {
-      if (!isAdm) return interaction.reply("❌ Only ADM can use this");
+      if (!isAdm) return interaction.reply("❌ Only ADM");
     }
 
-    if (["kick", "ban", "warn", "unwarn", "role", "timeout", "announce"].includes(interaction.commandName)) {
-      if (!isAllowedUser) return interaction.reply("❌ Only management can use this");
+    if (["kick","ban","warn","role","announce"].includes(interaction.commandName)) {
+      if (!isAllowed) return interaction.reply("❌ No permission");
     }
 
-    const member = interaction.options.getMember("user");
-
-    // ===== PING =====
-    if (interaction.commandName === "ping") {
-      return interaction.reply("🏓 Pong!");
-    }
-
-    // ===== ANNOUNCE =====
-    if (interaction.commandName === "announce") {
-      const msg = interaction.options.getString("message");
-      const channel = interaction.options.getChannel("channel");
-      await channel.send(msg);
-      return interaction.reply("✅ Sent!");
-    }
-
-    // ===== WARN =====
-    if (interaction.commandName === "warn") {
-      if (!dbReady) return interaction.reply("⚠️ DB not ready");
-
-      let data = await Warn.findOne({ userId: member.id });
-      if (!data) data = new Warn({ userId: member.id, warns: 0 });
-
-      data.warns++;
-
-      if (data.warns >= 3) {
-        await member.timeout(86400000);
-        data.warns = 0;
-        await data.save();
-        return interaction.reply("⚠️ 3 warns → Timeout");
-      }
-
-      await data.save();
-      return interaction.reply(`⚠️ Warned (${data.warns}/3)`);
-    }
-
-    // ===== JOIN (CRAIG SYSTEM) =====
+    // ===== JOIN (FIXED CRAIG SYSTEM) =====
     if (interaction.commandName === "join") {
 
       const channel = interaction.options.getChannel("channel");
@@ -264,10 +229,10 @@ client.on("interactionCreate", async (interaction) => {
 
       });
 
-      return interaction.reply(`🎙️ CRAIG recording started in ${channel.name}`);
+      return interaction.reply(`🎙️ Recording started in ${channel.name}`);
     }
 
-    // ===== STOP (MERGE SYSTEM) =====
+    // ===== STOP (MERGE CRAIG STYLE) =====
     if (interaction.commandName === "stop") {
 
       const data = recordings.get(interaction.guild.id);
@@ -297,13 +262,13 @@ client.on("interactionCreate", async (interaction) => {
           files.forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
 
           interaction.followUp({
-            content: "📁 CRAIG FINAL AUDIO:",
+            content: "📁 CRAIG OUTPUT:",
             files: [output]
           });
 
         });
 
-      return interaction.reply("⏹ Stopping & merging...");
+      return interaction.reply("⏹ Stopping...");
     }
 
     // ===== PURGE =====
@@ -313,44 +278,17 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply(`🧹 Deleted ${amount}`);
     }
 
-    // ===== ROLE =====
-    if (interaction.commandName === "role") {
-
-      const roles = [
-        interaction.options.getRole("role1"),
-        interaction.options.getRole("role2"),
-        interaction.options.getRole("role3")
-      ].filter(Boolean);
-
-      for (const role of roles) {
-        await member.roles.add(role);
-      }
-
-      return interaction.reply("✅ Roles added");
-    }
-
-    // ===== KICK =====
-    if (interaction.commandName === "kick") {
-      await member.kick(interaction.options.getString("reason"));
-      return interaction.reply("👢 User kicked");
-    }
-
-    // ===== BAN =====
-    if (interaction.commandName === "ban") {
-      await member.ban({ reason: interaction.options.getString("reason") });
-      return interaction.reply("🔨 User banned");
-    }
-
-    // ===== TIMEOUT =====
-    if (interaction.commandName === "timeout") {
-      const time = interaction.options.getInteger("time");
-      await member.timeout(time * 60000);
-      return interaction.reply(`⏱️ Timeout ${time} min`);
+    // ===== ANNOUNCE =====
+    if (interaction.commandName === "announce") {
+      const msg = interaction.options.getString("message");
+      const channel = interaction.options.getChannel("channel");
+      await channel.send(msg);
+      return interaction.reply("✅ Sent");
     }
 
   } catch (err) {
     console.error(err);
-    return interaction.reply("❌ Error occurred");
+    return interaction.reply("❌ Error");
   }
 });
 
