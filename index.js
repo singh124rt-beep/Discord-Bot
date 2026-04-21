@@ -20,9 +20,9 @@ const { joinVoiceChannel } = require("@discordjs/voice");
 
 console.log("🔥 BOT STARTING...");
 
-// ===== ENV =====
-if (!process.env.DISCORD_BOT_TOKEN) process.exit(1);
-if (!process.env.MONGO_URI) process.exit(1);
+// ===== ENV CHECK =====
+if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing DISCORD_BOT_TOKEN");
+if (!process.env.MONGO_URI) throw new Error("Missing MONGO_URI");
 
 // ===== EXPRESS =====
 const app = express();
@@ -50,67 +50,70 @@ const client = new Client({
   ]
 });
 
-// ===== PERMISSIONS =====
+// ===== PERMISSION USERS =====
 const allowedUsers = [
   "1390273593040048220",
   "1448606724100456459"
 ];
 
-// ===== RECORD STATE =====
+// ===== RECORD STORAGE =====
 const recordings = new Map();
 
-// ===== SLASH COMMANDS =====
+// ===== COMMANDS (FIXED - NO UNDEFINED ERRORS) =====
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
+  new SlashCommandBuilder()
+    .setName("ping")
+    .setDescription("Check bot status"),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o => o.setName("message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").setRequired(true)),
+    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
+    .addChannelOption(o => o.setName("channel").setDescription("Channel").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
     .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addIntegerOption(o => o.setName("time").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("role")
     .setDescription("Give roles")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setRequired(true))
-    .addRoleOption(o => o.setName("role2"))
-    .addRoleOption(o => o.setName("role3")),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
+    .addRoleOption(o => o.setName("role2").setDescription("Role"))
+    .addRoleOption(o => o.setName("role3").setDescription("Role")),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setRequired(true)),
+    .addIntegerOption(o => o.setName("amount").setDescription("1-100").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("record")
-    .setDescription("Start Craig-style recording")
+    .setDescription("Start CRAIG recording")
     .addChannelOption(o =>
       o.setName("channel")
+        .setDescription("Voice channel")
         .setRequired(true)
         .addChannelTypes(ChannelType.GuildVoice)
     ),
@@ -121,6 +124,7 @@ const commands = [
 
 ].map(c => c.toJSON());
 
+// ===== REST =====
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
 // ===== READY =====
@@ -129,28 +133,28 @@ client.once("clientReady", async () => {
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 });
 
-// ===== BUTTON HANDLER =====
+// ===== BUTTONS =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
 
-  const state = recordings.get(interaction.guild.id);
+  const data = recordings.get(interaction.guild.id);
 
   if (interaction.customId === "stop_record") {
-    if (state) {
-      state.connection.destroy();
+    if (data) {
+      data.connection.destroy();
       recordings.delete(interaction.guild.id);
     }
-    return interaction.reply("⏹ Recording stopped");
+    return interaction.reply("⏹ Stopped");
   }
 
   if (interaction.customId === "download_record") {
-    if (!state || !state.files.length) {
-      return interaction.reply({ content: "❌ No recordings yet", ephemeral: true });
+    if (!data || !data.files.length) {
+      return interaction.reply({ content: "❌ No recordings", ephemeral: true });
     }
 
     return interaction.reply({
-      content: "📁 Recordings:",
-      files: state.files.slice(0, 5)
+      content: "📁 Files:",
+      files: data.files.slice(0, 5)
     });
   }
 });
@@ -166,7 +170,7 @@ client.on("interactionCreate", async (interaction) => {
 
     const isAllowed = allowedUsers.includes(userId);
 
-    // ===== MODERATION =====
+    // ===== MOD CHECK =====
     if (["kick", "ban", "warn", "timeout", "role", "announce"].includes(interaction.commandName)) {
       if (!isAllowed) return interaction.reply("❌ No permission");
     }
@@ -283,9 +287,9 @@ client.on("interactionCreate", async (interaction) => {
       });
 
       const embed = new EmbedBuilder()
-        .setTitle("🎙️ CRAIG ULTRA RECORDING")
+        .setTitle("🎙️ CRAIG RECORDING")
         .setColor(0x57F287)
-        .setDescription(`🟢 Recording started\n📡 ${channel.name}\n👥 Users: 0`)
+        .setDescription(`🟢 Recording started\n📡 ${channel.name}`)
         .setThumbnail("https://i.imgur.com/zFAITHB.jpeg");
 
       const row = new ActionRowBuilder().addComponents(
@@ -300,28 +304,7 @@ client.on("interactionCreate", async (interaction) => {
           .setStyle(ButtonStyle.Success)
       );
 
-      const msg = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
-
-      state.message = msg;
-
-      // LIVE UPDATE
-      setInterval(async () => {
-
-        const s = recordings.get(interaction.guild.id);
-        if (!s) return;
-
-        const updated = new EmbedBuilder()
-          .setTitle("🎙️ CRAIG ULTRA RECORDING")
-          .setColor(0x57F287)
-          .setDescription(
-            `🟢 Live Recording\n📡 ${channel.name}\n👥 Speaking: ${s.speaking.size}\n📁 Files: ${s.files.length}`
-          );
-
-        try {
-          await s.message.edit({ embeds: [updated] });
-        } catch {}
-
-      }, 5000);
+      return interaction.reply({ embeds: [embed], components: [row] });
     }
 
     // ===== STOP =====
