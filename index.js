@@ -38,8 +38,8 @@ app.listen(3000);
 
 // ===== MONGO =====
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("Mongo Connected"))
-  .catch(err => console.log("Mongo Error:", err.message));
+  .then(() => console.log("✅ Mongo Connected"))
+  .catch(err => console.log("❌ Mongo Error:", err.message));
 
 // ===== WARN DB =====
 const Warn = mongoose.model("Warn", new mongoose.Schema({
@@ -47,17 +47,18 @@ const Warn = mongoose.model("Warn", new mongoose.Schema({
   warns: Number
 }));
 
-// ===== CLIENT =====
+// ===== CLIENT (FIXED INTENTS) =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates // ✅ IMPORTANT FIX
   ]
 });
 
-// ===== ROLE ACCESS =====
+// ===== ALLOWED ROLES =====
 const allowedRoles = [
   "1448606724100456459",
   "1459503999786156208",
@@ -129,23 +130,23 @@ const commands = [
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").setDescription("Channel").setRequired(true)),
+    .addStringOption(o => o.setName("message").setRequired(true))
+    .addChannelOption(o => o.setName("channel").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("unwarn")
     .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setDescription("1-100").setRequired(true))
+    .addIntegerOption(o => o.setName("amount").setRequired(true))
 
 ].map(c => c.toJSON());
 
@@ -153,14 +154,14 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN)
 
 // ===== READY =====
 client.once("clientReady", async () => {
-  console.log(`Logged in: ${client.user.tag}`);
+  console.log(`🟢 Logged in: ${client.user.tag}`);
 
   await rest.put(
     Routes.applicationCommands(client.user.id),
     { body: commands }
   );
 
-  console.log("Commands registered");
+  console.log("✅ Commands registered");
 });
 
 // ===== ANTI ABUSE =====
@@ -170,19 +171,15 @@ client.on("messageCreate", async (msg) => {
   const content = msg.content.toLowerCase();
 
   if (badWords.some(w => content.includes(w))) {
-    try {
-      await msg.delete();
-      await msg.member.timeout(24 * 60 * 60 * 1000);
-      msg.channel.send(`🚫 ${msg.author} abused → Timeout`);
-    } catch {}
+    await msg.delete().catch(() => {});
+    await msg.member.timeout(24 * 60 * 60 * 1000).catch(() => {});
+    msg.channel.send(`🚫 ${msg.author} abused → Timeout`);
   }
 
   if (msg.mentions.users.size >= 5) {
-    try {
-      await msg.delete();
-      await msg.member.timeout(24 * 60 * 60 * 1000);
-      msg.channel.send(`🚫 ${msg.author} tag spam`);
-    } catch {}
+    await msg.delete().catch(() => {});
+    await msg.member.timeout(24 * 60 * 60 * 1000).catch(() => {});
+    msg.channel.send(`🚫 ${msg.author} tag spam`);
   }
 });
 
@@ -193,13 +190,13 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isButton()) {
 
     if (interaction.customId === "dismiss") {
-      return interaction.update({ content: "❌ Dismissed", components: [] });
+      return interaction.update({ content: "❌ Closed", components: [] });
     }
 
     if (interaction.customId === "stop") {
 
       const hasRole = interaction.member.roles.cache.some(r => allowedRoles.includes(r.id));
-      if (!hasRole) return interaction.reply({ content: "❌ Not allowed", ephemeral: true });
+      if (!hasRole) return interaction.reply("❌ Not allowed");
 
       const connection = getVoiceConnection(interaction.guild.id);
       if (!connection) return;
@@ -230,21 +227,23 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // ===== SLASH COMMANDS =====
+  // ===== SLASH =====
   if (!interaction.isChatInputCommand()) return;
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply();
 
   try {
 
     // ===== JOIN =====
     if (interaction.commandName === "join") {
 
-      const hasRole = interaction.member.roles.cache.some(r => allowedRoles.includes(r.id));
-      if (!hasRole) return interaction.editReply("❌ You are not allowed");
+      const member = await interaction.guild.members.fetch(interaction.user.id);
+      const vc = member.voice.channel;
 
-      const vc = interaction.member.voice.channel;
       if (!vc) return interaction.editReply("❌ Join VC first");
+
+      const hasRole = member.roles.cache.some(r => allowedRoles.includes(r.id));
+      if (!hasRole) return interaction.editReply("❌ Not allowed");
 
       const connection = joinVoiceChannel({
         channelId: vc.id,
@@ -257,7 +256,7 @@ client.on("interactionCreate", async (interaction) => {
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("stop").setLabel("🛑 Stop").setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId("dismiss").setLabel("❌ Dismiss").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId("dismiss").setLabel("❌ Close").setStyle(ButtonStyle.Secondary)
       );
 
       return interaction.editReply({
@@ -272,10 +271,6 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== STOP =====
     if (interaction.commandName === "stop") {
-
-      const hasRole = interaction.member.roles.cache.some(r => allowedRoles.includes(r.id));
-      if (!hasRole) return interaction.editReply("❌ Not allowed");
-
       const connection = getVoiceConnection(interaction.guild.id);
       if (!connection) return interaction.editReply("❌ Not recording");
 
@@ -291,7 +286,6 @@ client.on("interactionCreate", async (interaction) => {
       if (!data) data = new Warn({ userId: member.id, warns: 0 });
 
       data.warns++;
-
       if (data.warns >= 3) {
         await member.timeout(24 * 60 * 60 * 1000);
         data.warns = 0;
