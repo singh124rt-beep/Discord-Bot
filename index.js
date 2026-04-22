@@ -57,7 +57,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("announce")
-    .setDescription("Send message with image")
+    .setDescription("Send message with optional image")
     .addStringOption(o =>
       o.setName("message").setDescription("Text").setRequired(true))
     .addChannelOption(o =>
@@ -73,6 +73,12 @@ const commands = [
       o.setName("user").setDescription("User").setRequired(true))
     .addStringOption(o =>
       o.setName("reason").setDescription("Reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("unwarn")
+    .setDescription("Remove a warn")
+    .addUserOption(o =>
+      o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
@@ -92,7 +98,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("timeout")
-    .setDescription("Timeout")
+    .setDescription("Timeout user")
     .addUserOption(o =>
       o.setName("user").setDescription("User").setRequired(true))
     .addIntegerOption(o =>
@@ -137,6 +143,8 @@ client.once("clientReady", async () => {
   await new REST({ version: "10" })
     .setToken(process.env.DISCORD_BOT_TOKEN)
     .put(Routes.applicationCommands(client.user.id), { body: commands });
+
+  console.log("Commands registered");
 });
 
 // ===== BUTTON =====
@@ -148,7 +156,7 @@ client.on("interactionCreate", async (i) => {
   }
 });
 
-// ===== MAIN COMMAND HANDLER =====
+// ===== COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -204,17 +212,33 @@ client.on("interactionCreate", async (interaction) => {
         await data.save();
 
         await member.send(`🚫 Timeout 24h\nReason: ${reason}`).catch(()=>{});
-        await interaction.channel.send(`🚫 ${member} timed out (3 warns)`);
+        await interaction.channel.send(`🚫 ${member.user.tag} timed out (3 warns)`);
 
-        return interaction.editReply("✅ Action done");
+        return interaction.editReply("✅ Done");
       }
 
       await data.save();
 
       await member.send(`⚠️ Warn\nReason: ${reason}`).catch(()=>{});
-      await interaction.channel.send(`⚠️ ${member} warned (${data.warns}/3)`);
+      await interaction.channel.send(`⚠️ ${member.user.tag} warned (${data.warns}/3)`);
 
-      return interaction.editReply("✅ Action done");
+      return interaction.editReply("✅ Done");
+    }
+
+    // ===== UNWARN =====
+    if (interaction.commandName === "unwarn") {
+      let data = await Warn.findOne({ userId: member.id });
+
+      if (!data || data.warns === 0)
+        return interaction.editReply("⚠️ No warns");
+
+      data.warns--;
+      await data.save();
+
+      await member.send("✅ Warn removed").catch(()=>{});
+      await interaction.channel.send(`✅ ${member.user.tag} unwarned (${data.warns}/3)`);
+
+      return interaction.editReply("✅ Done");
     }
 
     // ===== KICK =====
@@ -246,10 +270,9 @@ client.on("interactionCreate", async (interaction) => {
       const min = interaction.options.getInteger("duration");
       const reason = interaction.options.getString("reason");
 
-      const ms = min * 60000;
       const hrs = (min / 60).toFixed(1);
 
-      await member.timeout(ms, reason);
+      await member.timeout(min * 60000, reason);
 
       await interaction.channel.send(
         `⏱️ ${member.user.tag} timeout\nDuration: ${min} min (${hrs} hrs)\nReason: ${reason}`
@@ -277,7 +300,7 @@ client.on("interactionCreate", async (interaction) => {
       const role = interaction.options.getRole("role");
       await member.roles.add(role);
       await interaction.channel.send(`✅ Role added to ${member.user.tag}`);
-      return interaction.editReply("Done");
+      return interaction.editReply("✅ Done");
     }
 
     // ===== REMOVE ROLE =====
@@ -285,9 +308,10 @@ client.on("interactionCreate", async (interaction) => {
       const role = interaction.options.getRole("role");
       await member.roles.remove(role);
       await interaction.channel.send(`🗑️ Role removed from ${member.user.tag}`);
-      return interaction.editReply("Done");
+      return interaction.editReply("✅ Done");
     }
 
+    // ===== PING =====
     if (interaction.commandName === "ping") {
       return interaction.editReply("🏓 Pong!");
     }
