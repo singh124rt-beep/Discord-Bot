@@ -57,13 +57,14 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("announce")
-    .setDescription("Send message")
+    .setDescription("Send message with image")
     .addStringOption(o =>
       o.setName("message").setDescription("Text").setRequired(true))
     .addChannelOption(o =>
       o.setName("channel").setDescription("Channel").setRequired(true)
-        .addChannelTypes(ChannelType.GuildText)
-    ),
+        .addChannelTypes(ChannelType.GuildText))
+    .addStringOption(o =>
+      o.setName("image").setDescription("Image URL")),
 
   new SlashCommandBuilder()
     .setName("warn")
@@ -151,7 +152,7 @@ client.on("interactionCreate", async (i) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  await interaction.deferReply({ ephemeral: true }); // 🔥 FIX ERROR
+  await interaction.deferReply({ ephemeral: true });
 
   try {
     const allowed = allowedUsers.includes(interaction.user.id);
@@ -164,9 +165,16 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "announce") {
       const msg = interaction.options.getString("message");
       const channel = interaction.options.getChannel("channel");
+      const image = interaction.options.getString("image");
 
-      // 👇 NORMAL MESSAGE (NO BOX)
-      await channel.send(msg);
+      if (image) {
+        await channel.send({
+          content: msg,
+          embeds: [{ image: { url: image } }]
+        });
+      } else {
+        await channel.send(msg);
+      }
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -239,12 +247,12 @@ client.on("interactionCreate", async (interaction) => {
       const reason = interaction.options.getString("reason");
 
       const ms = min * 60000;
-      const hours = (min / 60).toFixed(1);
+      const hrs = (min / 60).toFixed(1);
 
       await member.timeout(ms, reason);
 
       await interaction.channel.send(
-        `⏱️ ${member.user.tag} timeout\nDuration: ${min} min (${hours} hrs)\nReason: ${reason}`
+        `⏱️ ${member.user.tag} timeout\nDuration: ${min} min (${hrs} hrs)\nReason: ${reason}`
       );
 
       return interaction.editReply("✅ Done");
