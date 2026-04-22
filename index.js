@@ -10,17 +10,16 @@ const {
   ChannelType,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder
+  ButtonStyle
 } = require("discord.js");
 
 console.log("🔥 BOT STARTING...");
 
 // ===== ENV =====
-if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing DISCORD_BOT_TOKEN");
-if (!process.env.MONGO_URI) throw new Error("Missing MONGO_URI");
+if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing TOKEN");
+if (!process.env.MONGO_URI) throw new Error("Missing MONGO");
 
-// ===== EXPRESS =====
+// ===== SERVER =====
 const app = express();
 app.get("/", (req, res) => res.send("Alive"));
 app.listen(3000);
@@ -31,19 +30,16 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(console.error);
 
 // ===== WARN MODEL =====
-const warnSchema = new mongoose.Schema({
+const Warn = mongoose.model("Warn", new mongoose.Schema({
   userId: String,
   warns: Number
-});
-const Warn = mongoose.model("Warn", warnSchema);
+}));
 
 // ===== CLIENT =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -57,18 +53,17 @@ const allowedUsers = [
 // ===== COMMANDS =====
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
+  new SlashCommandBuilder().setName("ping").setDescription("Ping"),
 
   new SlashCommandBuilder()
     .setName("announce")
-    .setDescription("Send announcement")
+    .setDescription("Send message")
     .addStringOption(o =>
-      o.setName("message").setDescription("Message").setRequired(true))
+      o.setName("message").setDescription("Text").setRequired(true))
     .addChannelOption(o =>
       o.setName("channel").setDescription("Channel").setRequired(true)
-        .addChannelTypes(ChannelType.GuildText))
-    .addStringOption(o =>
-      o.setName("image").setDescription("Image URL")),
+        .addChannelTypes(ChannelType.GuildText)
+    ),
 
   new SlashCommandBuilder()
     .setName("warn")
@@ -96,7 +91,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("timeout")
-    .setDescription("Timeout user")
+    .setDescription("Timeout")
     .addUserOption(o =>
       o.setName("user").setDescription("User").setRequired(true))
     .addIntegerOption(o =>
@@ -114,98 +109,68 @@ const commands = [
     .setName("purge")
     .setDescription("Delete messages")
     .addIntegerOption(o =>
-      o.setName("amount").setDescription("1-100").setRequired(true)),
+      o.setName("amount").setDescription("Amount").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("addrole")
-    .setDescription("Add roles")
+    .setDescription("Add role")
     .addUserOption(o =>
       o.setName("user").setDescription("User").setRequired(true))
     .addRoleOption(o =>
-      o.setName("role1").setDescription("Role").setRequired(true))
-    .addRoleOption(o =>
-      o.setName("role2").setDescription("Role"))
-    .addRoleOption(o =>
-      o.setName("role3").setDescription("Role")),
+      o.setName("role").setDescription("Role").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("removerole")
-    .setDescription("Remove roles")
+    .setDescription("Remove role")
     .addUserOption(o =>
       o.setName("user").setDescription("User").setRequired(true))
     .addRoleOption(o =>
-      o.setName("role1").setDescription("Role").setRequired(true))
-    .addRoleOption(o =>
-      o.setName("role2").setDescription("Role"))
-    .addRoleOption(o =>
-      o.setName("role3").setDescription("Role"))
+      o.setName("role").setDescription("Role").setRequired(true))
 
 ].map(c => c.toJSON());
 
-// ===== READY =====
+// ===== REGISTER =====
 client.once("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
   await new REST({ version: "10" })
     .setToken(process.env.DISCORD_BOT_TOKEN)
     .put(Routes.applicationCommands(client.user.id), { body: commands });
-
-  console.log("Commands registered");
 });
 
-// ===== BUTTON HANDLER =====
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
+// ===== BUTTON =====
+client.on("interactionCreate", async (i) => {
+  if (!i.isButton()) return;
 
-  if (interaction.customId === "dismiss_announce") {
-    return interaction.update({
-      content: "✅ Dismissed",
-      embeds: [],
-      components: []
-    });
+  if (i.customId === "dismiss") {
+    return i.update({ content: "✅ Closed", components: [] });
   }
 });
 
-// ===== COMMAND HANDLER =====
+// ===== MAIN COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
+  await interaction.deferReply({ ephemeral: true }); // 🔥 FIX ERROR
+
   try {
-    const userId = interaction.user.id;
-    const isAllowed = allowedUsers.includes(userId);
+    const allowed = allowedUsers.includes(interaction.user.id);
+    const member = interaction.options.getMember("user");
 
-    // 🔹 defer reply ONLY for safety
-    await interaction.deferReply({ ephemeral: true });
-
-    // ===== PING =====
-    if (interaction.commandName === "ping") {
-      return interaction.editReply("🏓 Pong!");
-    }
+    if (interaction.commandName !== "ping" && !allowed)
+      return interaction.editReply("❌ No permission");
 
     // ===== ANNOUNCE =====
     if (interaction.commandName === "announce") {
-
-      if (!isAllowed)
-        return interaction.editReply("❌ No permission");
-
       const msg = interaction.options.getString("message");
       const channel = interaction.options.getChannel("channel");
-      const image = interaction.options.getString("image");
 
-      const embed = new EmbedBuilder()
-        .setDescription(msg)
-        .setColor(0x2b2d31)
-        .setTimestamp();
+      // 👇 NORMAL MESSAGE (NO BOX)
+      await channel.send(msg);
 
-      if (image) embed.setImage(image);
-
-      // 👇 SEND TO PUBLIC CHANNEL
-      await channel.send({ embeds: [embed] });
-
-      // 👇 PRIVATE CONFIRMATION (ONLY YOU)
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId("dismiss_announce")
+          .setCustomId("dismiss")
           .setLabel("Dismiss")
           .setStyle(ButtonStyle.Secondary)
       );
@@ -216,12 +181,7 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    // ===== MODERATION COMMANDS =====
-    if (!isAllowed)
-      return interaction.editReply("❌ No permission");
-
-    const member = interaction.options.getMember("user");
-
+    // ===== WARN =====
     if (interaction.commandName === "warn") {
       const reason = interaction.options.getString("reason");
 
@@ -232,70 +192,101 @@ client.on("interactionCreate", async (interaction) => {
 
       if (data.warns >= 3) {
         await member.timeout(86400000, "3 warns");
-        await member.send(`🚫 Timeout 24h\nReason: ${reason}`).catch(()=>{});
         data.warns = 0;
+        await data.save();
+
+        await member.send(`🚫 Timeout 24h\nReason: ${reason}`).catch(()=>{});
+        await interaction.channel.send(`🚫 ${member} timed out (3 warns)`);
+
+        return interaction.editReply("✅ Action done");
       }
 
       await data.save();
-      return interaction.editReply(`⚠️ Warned (${data.warns}/3)\nReason: ${reason}`);
+
+      await member.send(`⚠️ Warn\nReason: ${reason}`).catch(()=>{});
+      await interaction.channel.send(`⚠️ ${member} warned (${data.warns}/3)`);
+
+      return interaction.editReply("✅ Action done");
     }
 
+    // ===== KICK =====
     if (interaction.commandName === "kick") {
       const reason = interaction.options.getString("reason");
+
+      await member.send(`👢 Kicked\nReason: ${reason}`).catch(()=>{});
       await member.kick(reason);
-      return interaction.editReply(`👢 Kicked\nReason: ${reason}`);
+
+      await interaction.channel.send(`👢 ${member.user.tag} kicked\nReason: ${reason}`);
+
+      return interaction.editReply("✅ Done");
     }
 
+    // ===== BAN =====
     if (interaction.commandName === "ban") {
       const reason = interaction.options.getString("reason");
+
+      await member.send(`🔨 Banned\nReason: ${reason}`).catch(()=>{});
       await member.ban({ reason });
-      return interaction.editReply(`🔨 Banned\nReason: ${reason}`);
+
+      await interaction.channel.send(`🔨 ${member.user.tag} banned\nReason: ${reason}`);
+
+      return interaction.editReply("✅ Done");
     }
 
+    // ===== TIMEOUT =====
     if (interaction.commandName === "timeout") {
-      const duration = interaction.options.getInteger("duration");
+      const min = interaction.options.getInteger("duration");
       const reason = interaction.options.getString("reason");
 
-      await member.timeout(duration * 60000, reason);
-      return interaction.editReply(`⏱️ Timeout ${duration} min\nReason: ${reason}`);
+      const ms = min * 60000;
+      const hours = (min / 60).toFixed(1);
+
+      await member.timeout(ms, reason);
+
+      await interaction.channel.send(
+        `⏱️ ${member.user.tag} timeout\nDuration: ${min} min (${hours} hrs)\nReason: ${reason}`
+      );
+
+      return interaction.editReply("✅ Done");
     }
 
+    // ===== UNTIMEOUT =====
     if (interaction.commandName === "untimeout") {
       await member.timeout(null);
-      return interaction.editReply(`✅ Timeout removed`);
+      await interaction.channel.send(`✅ Timeout removed: ${member.user.tag}`);
+      return interaction.editReply("✅ Done");
     }
 
+    // ===== PURGE =====
     if (interaction.commandName === "purge") {
-      const amount = interaction.options.getInteger("amount");
-      await interaction.channel.bulkDelete(amount, true);
-      return interaction.editReply(`🧹 Deleted ${amount}`);
+      const amt = interaction.options.getInteger("amount");
+      await interaction.channel.bulkDelete(amt, true);
+      return interaction.editReply(`🧹 Deleted ${amt}`);
     }
 
+    // ===== ADD ROLE =====
     if (interaction.commandName === "addrole") {
-      const roles = [
-        interaction.options.getRole("role1"),
-        interaction.options.getRole("role2"),
-        interaction.options.getRole("role3")
-      ].filter(Boolean);
-
-      for (const role of roles) await member.roles.add(role);
-      return interaction.editReply("✅ Roles added");
+      const role = interaction.options.getRole("role");
+      await member.roles.add(role);
+      await interaction.channel.send(`✅ Role added to ${member.user.tag}`);
+      return interaction.editReply("Done");
     }
 
+    // ===== REMOVE ROLE =====
     if (interaction.commandName === "removerole") {
-      const roles = [
-        interaction.options.getRole("role1"),
-        interaction.options.getRole("role2"),
-        interaction.options.getRole("role3")
-      ].filter(Boolean);
+      const role = interaction.options.getRole("role");
+      await member.roles.remove(role);
+      await interaction.channel.send(`🗑️ Role removed from ${member.user.tag}`);
+      return interaction.editReply("Done");
+    }
 
-      for (const role of roles) await member.roles.remove(role);
-      return interaction.editReply("🗑️ Roles removed");
+    if (interaction.commandName === "ping") {
+      return interaction.editReply("🏓 Pong!");
     }
 
   } catch (err) {
     console.error(err);
-    return interaction.editReply("❌ Error occurred");
+    interaction.editReply("❌ Error");
   }
 });
 
