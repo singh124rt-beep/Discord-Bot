@@ -10,7 +10,8 @@ const {
   ChannelType,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
+  EmbedBuilder
 } = require("discord.js");
 
 console.log("🔥 BOT STARTING...");
@@ -40,7 +41,9 @@ const Warn = mongoose.model("Warn", warnSchema);
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
   ]
 });
 
@@ -51,102 +54,120 @@ const allowedUsers = [
   "1420063137838923868"
 ];
 
+// ===== AUTOMOD WORDS =====
+const badWords = ["madarchod", "bhosdike", "chutiya", "gandu"];
+
 // ===== COMMANDS =====
 const commands = [
 
-  new SlashCommandBuilder()
-    .setName("ping")
-    .setDescription("Check bot"),
+  new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
 
   new SlashCommandBuilder()
     .setName("announce")
-    .setDescription("Send announcement")
+    .setDescription("Send advanced announcement")
     .addStringOption(o =>
       o.setName("message").setDescription("Message").setRequired(true))
     .addChannelOption(o =>
       o.setName("channel").setDescription("Channel").setRequired(true)
-        .addChannelTypes(ChannelType.GuildText)
-    ),
+        .addChannelTypes(ChannelType.GuildText))
+    .addStringOption(o =>
+      o.setName("image").setDescription("Image URL")),
 
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("timeout")
+    .setDescription("Timeout user")
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addIntegerOption(o => o.setName("duration").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("untimeout")
+    .setDescription("Remove timeout")
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o =>
-      o.setName("amount").setDescription("1-100").setRequired(true)),
+    .addIntegerOption(o => o.setName("amount").setRequired(true)),
 
-  // ===== ADD ROLE =====
   new SlashCommandBuilder()
     .setName("addrole")
-    .setDescription("Add roles to user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o =>
-      o.setName("role1").setDescription("Role 1").setRequired(true))
-    .addRoleOption(o =>
-      o.setName("role2").setDescription("Role 2"))
-    .addRoleOption(o =>
-      o.setName("role3").setDescription("Role 3")),
+    .setDescription("Add roles")
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addRoleOption(o => o.setName("role1").setRequired(true))
+    .addRoleOption(o => o.setName("role2"))
+    .addRoleOption(o => o.setName("role3")),
 
-  // ===== REMOVE ROLE =====
   new SlashCommandBuilder()
     .setName("removerole")
-    .setDescription("Remove roles from user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o =>
-      o.setName("role1").setDescription("Role 1").setRequired(true))
-    .addRoleOption(o =>
-      o.setName("role2").setDescription("Role 2"))
-    .addRoleOption(o =>
-      o.setName("role3").setDescription("Role 3"))
+    .setDescription("Remove roles")
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addRoleOption(o => o.setName("role1").setRequired(true))
+    .addRoleOption(o => o.setName("role2"))
+    .addRoleOption(o => o.setName("role3"))
 
 ].map(c => c.toJSON());
-
-// ===== REST =====
-const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
 // ===== READY =====
 client.once("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
-  try {
-    await rest.put(
-      Routes.applicationCommands(client.user.id),
-      { body: commands }
-    );
-    console.log("📦 Slash commands registered");
-  } catch (err) {
-    console.error(err);
-  }
+  await new REST({ version: "10" })
+    .setToken(process.env.DISCORD_BOT_TOKEN)
+    .put(Routes.applicationCommands(client.user.id), { body: commands });
+
+  console.log("Commands registered");
 });
 
-// ===== BUTTONS =====
+// ===== BUTTON HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
 
   if (interaction.customId === "dismiss_announce") {
     return interaction.update({
-      content: "✅ Announcement dismissed",
+      content: "✅ Dismissed",
+      embeds: [],
       components: []
     });
+  }
+});
+
+// ===== AUTOMOD =====
+client.on("messageCreate", async (msg) => {
+  if (msg.author.bot) return;
+
+  const content = msg.content.toLowerCase();
+
+  if (badWords.some(w => content.includes(w))) {
+    await msg.delete().catch(() => {});
+    await msg.member.timeout(86400000, "Abuse");
+
+    msg.channel.send(`🚫 ${msg.author} abused → Timeout 24h`);
+  }
+
+  if (msg.mentions.users.size >= 5) {
+    await msg.delete().catch(() => {});
+    await msg.member.timeout(86400000, "Spam");
+
+    msg.channel.send(`🚫 ${msg.author} spam → Timeout`);
   }
 });
 
@@ -155,27 +176,26 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   try {
-
-    const userId = interaction.user.id;
-    const isAllowed = allowedUsers.includes(userId);
-
+    const isAllowed = allowedUsers.includes(interaction.user.id);
     const member = interaction.options.getMember("user");
 
-    // ===== PING =====
-    if (interaction.commandName === "ping") {
-      return interaction.reply("🏓 Pong!");
-    }
+    if (interaction.commandName !== "ping" && !isAllowed)
+      return interaction.reply({ content: "❌ No permission", ephemeral: true });
 
     // ===== ANNOUNCE =====
     if (interaction.commandName === "announce") {
 
-      if (!isAllowed)
-        return interaction.reply({ content: "❌ No permission", ephemeral: true });
-
       const msg = interaction.options.getString("message");
       const channel = interaction.options.getChannel("channel");
+      const image = interaction.options.getString("image");
 
-      await channel.send(msg);
+      const embed = new EmbedBuilder()
+        .setDescription(msg)
+        .setColor(0x2b2d31)
+        .setFooter({ text: `Sent by ${interaction.user.username}` })
+        .setTimestamp();
+
+      if (image) embed.setImage(image);
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -184,69 +204,86 @@ client.on("interactionCreate", async (interaction) => {
           .setStyle(ButtonStyle.Secondary)
       );
 
-      return interaction.reply({
-        content: "Sent successfully!",
-        ephemeral: true,
+      await channel.send({
+        embeds: [embed],
         components: [row]
       });
+
+      return interaction.reply({ content: "✅ Sent!", ephemeral: true });
     }
 
     // ===== WARN =====
     if (interaction.commandName === "warn") {
-
-      if (!isAllowed)
-        return interaction.reply({ content: "❌ No permission", ephemeral: true });
+      const reason = interaction.options.getString("reason");
 
       let data = await Warn.findOne({ userId: member.id });
       if (!data) data = new Warn({ userId: member.id, warns: 0 });
 
       data.warns++;
-      await data.save();
 
-      return interaction.reply(`⚠️ Warned (${data.warns}/3)`);
+      if (data.warns >= 3) {
+        await member.timeout(86400000, "3 warns");
+        await member.send(`🚫 3 warns → Timeout 24h\nReason: ${reason}`).catch(()=>{});
+
+        data.warns = 0;
+        await data.save();
+
+        return interaction.reply(`🚨 ${member.user.tag} timed out (3 warns)`);
+      }
+
+      await data.save();
+      await member.send(`⚠️ Warned\nReason: ${reason}`).catch(()=>{});
+
+      return interaction.reply(`⚠️ Warned ${member.user.tag} (${data.warns}/3)\nReason: ${reason}`);
     }
 
     // ===== KICK =====
     if (interaction.commandName === "kick") {
+      const reason = interaction.options.getString("reason");
 
-      if (!isAllowed)
-        return interaction.reply({ content: "❌ No permission", ephemeral: true });
+      await member.send(`👢 Kicked\nReason: ${reason}`).catch(()=>{});
+      await member.kick(reason);
 
-      await member.kick();
-      return interaction.reply("👢 Kicked");
+      return interaction.reply(`👢 Kicked ${member.user.tag}\nReason: ${reason}`);
     }
 
     // ===== BAN =====
     if (interaction.commandName === "ban") {
+      const reason = interaction.options.getString("reason");
 
-      if (!isAllowed)
-        return interaction.reply({ content: "❌ No permission", ephemeral: true });
+      await member.send(`🔨 Banned\nReason: ${reason}`).catch(()=>{});
+      await member.ban({ reason });
 
-      await member.ban();
-      return interaction.reply("🔨 Banned");
+      return interaction.reply(`🔨 Banned ${member.user.tag}\nReason: ${reason}`);
+    }
+
+    // ===== TIMEOUT =====
+    if (interaction.commandName === "timeout") {
+      const duration = interaction.options.getInteger("duration");
+      const reason = interaction.options.getString("reason");
+
+      await member.timeout(duration * 60000, reason);
+      await member.send(`⏱️ Timeout\nDuration: ${duration} min\nReason: ${reason}`).catch(()=>{});
+
+      return interaction.reply(`⏱️ Timeout ${member.user.tag} (${duration} min)\nReason: ${reason}`);
+    }
+
+    // ===== UNTIMEOUT =====
+    if (interaction.commandName === "untimeout") {
+      await member.timeout(null);
+      return interaction.reply(`✅ Timeout removed for ${member.user.tag}`);
     }
 
     // ===== PURGE =====
     if (interaction.commandName === "purge") {
-
-      if (!isAllowed)
-        return interaction.reply({ content: "❌ No permission", ephemeral: true });
-
       const amount = interaction.options.getInteger("amount");
       await interaction.channel.bulkDelete(amount, true);
 
-      return interaction.reply({
-        content: `🧹 Deleted ${amount} messages`,
-        ephemeral: true
-      });
+      return interaction.reply({ content: `🧹 Deleted ${amount}`, ephemeral: true });
     }
 
     // ===== ADD ROLE =====
     if (interaction.commandName === "addrole") {
-
-      if (!isAllowed)
-        return interaction.reply({ content: "❌ No permission", ephemeral: true });
-
       const roles = [
         interaction.options.getRole("role1"),
         interaction.options.getRole("role2"),
@@ -257,18 +294,11 @@ client.on("interactionCreate", async (interaction) => {
         await member.roles.add(role);
       }
 
-      return interaction.reply({
-        content: `✅ Added ${roles.length} role(s)`,
-        ephemeral: true
-      });
+      return interaction.reply({ content: `✅ Added roles`, ephemeral: true });
     }
 
     // ===== REMOVE ROLE =====
     if (interaction.commandName === "removerole") {
-
-      if (!isAllowed)
-        return interaction.reply({ content: "❌ No permission", ephemeral: true });
-
       const roles = [
         interaction.options.getRole("role1"),
         interaction.options.getRole("role2"),
@@ -279,10 +309,7 @@ client.on("interactionCreate", async (interaction) => {
         await member.roles.remove(role);
       }
 
-      return interaction.reply({
-        content: `🗑️ Removed ${roles.length} role(s)`,
-        ephemeral: true
-      });
+      return interaction.reply({ content: `🗑️ Removed roles`, ephemeral: true });
     }
 
   } catch (err) {
