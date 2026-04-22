@@ -131,7 +131,7 @@ const commands = [
 ].map(c => c.toJSON());
 
 // ===== REGISTER =====
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
   await new REST({ version: "10" })
