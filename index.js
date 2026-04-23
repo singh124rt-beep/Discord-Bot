@@ -88,7 +88,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("warnlist")
-    .setDescription("Check warns")
+    .setDescription("Check warns (global or user)")
     .addUserOption(o =>
       o.setName("user").setDescription("User (optional)")),
 
@@ -182,6 +182,7 @@ client.on("interactionCreate", async (interaction) => {
     const allowed = allowedUsers.includes(interaction.user.id);
     const member = interaction.options.getMember("user");
 
+    // ✅ PUBLIC COMMANDS
     if (!["ping", "warnlist"].includes(interaction.commandName) && !allowed)
       return interaction.editReply("❌ No permission");
 
@@ -248,21 +249,43 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== WARNLIST =====
     if (interaction.commandName === "warnlist") {
-      const target = interaction.options.getMember("user") || interaction.member;
 
-      let data = await Warn.findOne({ userId: target.id });
+      const target = interaction.options.getMember("user");
 
-      if (!data || data.warns === 0) {
-        return interaction.editReply(`📊 ${target.user.tag} has 0 warns`);
+      // USER HISTORY
+      if (target) {
+        let data = await Warn.findOne({ userId: target.id });
+
+        if (!data || data.warns === 0) {
+          return interaction.editReply(`📊 ${target.user.tag} has 0 warns`);
+        }
+
+        let historyText = data.history
+          .map((w, i) => `**${i + 1}.** ${w.reason}\n🕒 ${w.date}`)
+          .join("\n\n");
+
+        return interaction.editReply(
+          `📊 ${target.user.tag} Warns: ${data.warns}/3\n\n${historyText}`
+        );
       }
 
-      let historyText = data.history
-        .map((w, i) => `**${i + 1}.** ${w.reason}\n🕒 ${w.date}`)
-        .join("\n\n");
+      // GLOBAL
+      const allData = await Warn.find({ warns: { $gt: 0 } });
 
-      return interaction.editReply(
-        `📊 ${target.user.tag} Warns: ${data.warns}/3\n\n${historyText}`
-      );
+      if (!allData.length) {
+        return interaction.editReply("📊 No users have warns");
+      }
+
+      let text = "📊 Warned Users\n\n";
+
+      for (let i = 0; i < allData.length; i++) {
+        const user = await client.users.fetch(allData[i].userId).catch(() => null);
+        if (!user) continue;
+
+        text += `${i + 1}. ${user.tag} → ${allData[i].warns} warn(s)\n`;
+      }
+
+      return interaction.editReply(text);
     }
 
     // ===== UNWARN =====
