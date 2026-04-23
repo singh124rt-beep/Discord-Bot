@@ -29,33 +29,63 @@ mongoose.connect(process.env.MONGO_URI)
 // ===== WARN MODEL =====
 const Warn = mongoose.model("Warn", new mongoose.Schema({
   userId: String,
-  warns: Number,
-  history: [
-    {
-      reason: String,
-      date: String
-    }
-  ]
+  warns: { type: Number, default: 0 },
+  history: [{ reason: String, date: String }]
 }));
 
 // ===== CLIENT =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
   ]
 });
 
-// ===== USERS / ROLES =====
+// ===== CONFIG =====
 const allowedUsers = [
   "1390273593040048220",
   "1448606724100456459",
   "1420063137838923868"
 ];
 
-const admRoleId = "1390273593040048220";
+const purgeRoleId = "1390273593040048220";
 
-// ===== COMMANDS =====
+// =====================================================
+// 🚨 ANTI SPAM SYSTEM
+// =====================================================
+const spamMap = new Map();
+
+client.on("messageCreate", async (message) => {
+  if (!message.guild || message.author.bot) return;
+
+  const id = message.author.id;
+  const now = Date.now();
+
+  const data = spamMap.get(id) || { count: 0, last: now };
+
+  if (now - data.last > 5000) {
+    data.count = 0;
+    data.last = now;
+  }
+
+  data.count++;
+  spamMap.set(id, data);
+
+  if (data.count >= 5) {
+    const member = await message.guild.members.fetch(id).catch(() => null);
+    if (member) {
+      await member.timeout(5 * 60 * 1000, "Anti-spam");
+      message.channel.send(`🚨 ${member.user.tag} muted for spam`);
+    }
+    spamMap.set(id, { count: 0, last: now });
+  }
+});
+
+// =====================================================
+// COMMANDS
+// =====================================================
 const commands = [
 
   new SlashCommandBuilder().setName("ping").setDescription("Ping"),
@@ -65,9 +95,7 @@ const commands = [
     .setDescription("Send announcement")
     .addStringOption(o => o.setName("message").setDescription("Text").setRequired(true))
     .addChannelOption(o =>
-      o.setName("channel")
-        .setDescription("Channel")
-        .setRequired(true)
+      o.setName("channel").setDescription("Channel").setRequired(true)
         .addChannelTypes(ChannelType.GuildText))
     .addStringOption(o => o.setName("image").setDescription("Image URL")),
 
@@ -90,7 +118,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName("warnlist")
     .setDescription("Show all warns")
-    .addUserOption(o => o.setName("user").setDescription("User (optional)")),
+    .addUserOption(o => o.setName("user").setDescription("User")),
 
   new SlashCommandBuilder()
     .setName("warninfo")
@@ -130,26 +158,28 @@ const commands = [
     .setName("addrole")
     .setDescription("Add roles")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
-    .addRoleOption(o => o.setName("role2"))
-    .addRoleOption(o => o.setName("role3"))
-    .addRoleOption(o => o.setName("role4"))
-    .addRoleOption(o => o.setName("role5")),
+    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
+    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
+    .addRoleOption(o => o.setName("role3").setDescription("Role 3"))
+    .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
+    .addRoleOption(o => o.setName("role5").setDescription("Role 5")),
 
   new SlashCommandBuilder()
     .setName("removerole")
     .setDescription("Remove roles")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
-    .addRoleOption(o => o.setName("role2"))
-    .addRoleOption(o => o.setName("role3"))
-    .addRoleOption(o => o.setName("role4"))
-    .addRoleOption(o => o.setName("role5"))
+    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
+    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
+    .addRoleOption(o => o.setName("role3").setDescription("Role 3"))
+    .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
+    .addRoleOption(o => o.setName("role5").setDescription("Role 5"))
 
 ].map(c => c.toJSON());
 
-// ===== REGISTER COMMANDS =====
-async function register() {
+// ===== REGISTER =====
+client.once("ready", async () => {
+  console.log(`Logged in as ${client.user.tag}`);
+
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
   await rest.put(
@@ -157,13 +187,7 @@ async function register() {
     { body: commands }
   );
 
-  console.log("✅ Slash commands registered");
-}
-
-// ===== READY EVENT (FIXED) =====
-client.once("ready", async () => {
-  console.log(`Logged in as ${client.user.tag}`);
-  await register();
+  console.log("Commands registered");
 });
 
 // ===== HANDLER =====
@@ -173,7 +197,7 @@ client.on("interactionCreate", async (interaction) => {
   await interaction.deferReply({ ephemeral: true });
 
   try {
-    const command = interaction.commandName;
+    const cmd = interaction.commandName;
     const allowed = allowedUsers.includes(interaction.user.id);
 
     const user = interaction.options.getUser("user");
@@ -181,36 +205,34 @@ client.on("interactionCreate", async (interaction) => {
       ? await interaction.guild.members.fetch(user.id).catch(() => null)
       : null;
 
-    const hasAdmRole = interaction.member?.roles?.cache?.has(admRoleId);
+    const hasRole = interaction.member?.roles?.cache?.has(purgeRoleId);
 
-    const publicCmds = ["ping", "warnlist", "warninfo"];
-
-    if (!publicCmds.includes(command) && !allowed) {
-      return interaction.editReply("❌ No permission");
+    if (!["ping","warnlist","warninfo"].includes(cmd) && !allowed) {
+      if (cmd === "purge" && !hasRole)
+        return interaction.editReply("❌ No permission");
+      if (cmd !== "purge")
+        return interaction.editReply("❌ No permission");
     }
 
     // ===== PING =====
-    if (command === "ping") {
-      return interaction.editReply("🏓 Pong!");
-    }
+    if (cmd === "ping") return interaction.editReply("🏓 Pong!");
 
     // ===== ANNOUNCE =====
-    if (command === "announce") {
+    if (cmd === "announce") {
       const msg = interaction.options.getString("message");
       const channel = interaction.options.getChannel("channel");
       const image = interaction.options.getString("image");
 
-      if (image) {
+      if (image)
         await channel.send({ content: msg, embeds: [{ image: { url: image } }] });
-      } else {
+      else
         await channel.send(msg);
-      }
 
-      return interaction.editReply("📤 Sent");
+      return interaction.editReply("📢 Sent");
     }
 
-    // ===== WARN (WITH DM + 3 WARN 24H) =====
-    if (command === "warn") {
+    // ===== WARN =====
+    if (cmd === "warn") {
       const reason = interaction.options.getString("reason");
 
       let data = await Warn.findOne({ userId: member.id });
@@ -219,55 +241,42 @@ client.on("interactionCreate", async (interaction) => {
       data.warns++;
       data.history.push({ reason, date: new Date().toLocaleString() });
 
-      // 📩 DM USER
-      await member.send(`⚠️ You got warned in **${interaction.guild.name}**\nReason: ${reason}`).catch(() => {});
+      await member.send(`⚠️ Warn: ${reason}`).catch(() => {});
 
-      // 🚫 3 WARN = 24H TIMEOUT
       if (data.warns >= 3) {
-        await member.timeout(24 * 60 * 60 * 1000, "3 warns reached");
-
-        const old = data.warns;
+        await member.timeout(24 * 60 * 60 * 1000, "3 warns");
         data.warns = 0;
         data.history = [];
-
-        await data.save();
-
-        return interaction.editReply(`🚫 ${member.user.tag} got 24h timeout (3 warns)`);
       }
 
       await data.save();
-      return interaction.editReply(`⚠️ Warned (${data.warns}/3)`);
+      return interaction.editReply(`Warned (${data.warns}/3)`);
     }
 
     // ===== WARNINFO =====
-    if (command === "warninfo") {
+    if (cmd === "warninfo") {
       const data = await Warn.findOne({ userId: member.id });
       if (!data) return interaction.editReply("No history");
 
       return interaction.editReply(
-        data.history.map((h, i) => `${i + 1}. ${h.reason} - ${h.date}`).join("\n")
+        data.history.map((h,i)=>`${i+1}. ${h.reason} - ${h.date}`).join("\n")
       );
     }
 
     // ===== WARNLIST =====
-    if (command === "warnlist") {
+    if (cmd === "warnlist") {
       const all = await Warn.find({ warns: { $gt: 0 } });
-      return interaction.editReply(
-        all.map(w => `<@${w.userId}> → ${w.warns}`).join("\n") || "No warns"
-      );
+      return interaction.editReply(all.map(w=>`<@${w.userId}> → ${w.warns}`).join("\n") || "No warns");
     }
 
     // ===== CLEARWARN =====
-    if (command === "clearwarn") {
-      if (!allowed && !hasAdmRole)
-        return interaction.editReply("❌ No permission");
-
+    if (cmd === "clearwarn") {
       await Warn.deleteOne({ userId: member.id });
-      return interaction.editReply("Cleared warns");
+      return interaction.editReply("Cleared");
     }
 
     // ===== UNWARN =====
-    if (command === "unwarn") {
+    if (cmd === "unwarn") {
       let data = await Warn.findOne({ userId: member.id });
       if (!data) return interaction.editReply("No warns");
 
@@ -278,47 +287,42 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply("Unwarned");
     }
 
-    // ===== KICK / BAN / TIMEOUT =====
-    if (command === "kick") {
+    // ===== MOD =====
+    if (cmd === "kick") {
       await member.kick(interaction.options.getString("reason"));
       return interaction.editReply("Kicked");
     }
 
-    if (command === "ban") {
+    if (cmd === "ban") {
       await member.ban({ reason: interaction.options.getString("reason") });
       return interaction.editReply("Banned");
     }
 
-    if (command === "timeout") {
-      await member.timeout(
-        interaction.options.getInteger("duration") * 60000,
-        interaction.options.getString("reason")
-      );
+    if (cmd === "timeout") {
+      await member.timeout(interaction.options.getInteger("duration")*60000, interaction.options.getString("reason"));
       return interaction.editReply("Timed out");
     }
 
-    if (command === "untimeout") {
+    if (cmd === "untimeout") {
       await member.timeout(null);
-      return interaction.editReply("Timeout removed");
+      return interaction.editReply("Removed timeout");
     }
 
-    // ===== ROLE SYSTEM =====
-    if (command === "addrole") {
+    // ===== ROLE =====
+    if (cmd === "addrole") {
       const roles = ["role1","role2","role3","role4","role5"]
-        .map(r => interaction.options.getRole(r))
-        .filter(Boolean);
+        .map(r=>interaction.options.getRole(r)).filter(Boolean);
 
       for (const r of roles) await member.roles.add(r);
-      return interaction.editReply("Roles added");
+      return interaction.editReply("Added");
     }
 
-    if (command === "removerole") {
+    if (cmd === "removerole") {
       const roles = ["role1","role2","role3","role4","role5"]
-        .map(r => interaction.options.getRole(r))
-        .filter(Boolean);
+        .map(r=>interaction.options.getRole(r)).filter(Boolean);
 
       for (const r of roles) await member.roles.remove(r);
-      return interaction.editReply("Roles removed");
+      return interaction.editReply("Removed");
     }
 
   } catch (err) {
