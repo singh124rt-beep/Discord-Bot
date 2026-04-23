@@ -23,7 +23,7 @@ app.listen(3000);
 
 // ===== DB =====
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("Mongo Connected"))
+  .then(() => console.log("✅ Mongo Connected"))
   .catch(console.error);
 
 // ===== WARN MODEL =====
@@ -144,11 +144,14 @@ const commands = [
 
 ].map(c => c.toJSON());
 
-// ===== REGISTER =====
+// ===== READY =====
 client.once("ready", async () => {
-  console.log(`Logged in as ${client.user.tag}`);
+  console.log(`✅ Logged in as ${client.user.tag}`);
+
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+
+  console.log("✅ Commands registered");
 });
 
 // ===== HANDLER =====
@@ -163,9 +166,10 @@ client.on("interactionCreate", async (interaction) => {
     const hasRole = interaction.member.roles.cache.has(purgeRoleId);
 
     const user = interaction.options.getUser("user");
-    const member = user
-      ? await interaction.guild.members.fetch(user.id).catch(() => null)
-      : null;
+    const member = user ? await interaction.guild.members.fetch(user.id).catch(() => null) : null;
+
+    if (user && !member)
+      return interaction.editReply("❌ User not found in server");
 
     // PERMISSIONS
     if (!["ping","warnlist","warninfo"].includes(cmd)) {
@@ -179,7 +183,6 @@ client.on("interactionCreate", async (interaction) => {
 
     if (cmd === "ping") return interaction.editReply("🏓 Pong!");
 
-    // ANNOUNCE
     if (cmd === "announce") {
       const msg = interaction.options.getString("message");
       const channel = interaction.options.getChannel("channel");
@@ -193,11 +196,11 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply("📢 Sent");
     }
 
-    // WARN
+    // ===== WARN =====
     if (cmd === "warn") {
       const reason = interaction.options.getString("reason");
 
-      let data = await Warn.findOne({ userId: member.id }) || new Warn({ userId: member.id, warns: 0, history: [] });
+      let data = await Warn.findOne({ userId: member.id }) || new Warn({ userId: member.id });
 
       data.warns++;
       data.history.push({ reason, date: new Date().toLocaleString() });
@@ -210,7 +213,7 @@ client.on("interactionCreate", async (interaction) => {
         msg = `⚠️ <@${member.id}> has been warned (3/3)
 Reason: ${reason}
 
-🚫 User reached max warns and has been timed out for 24h`;
+🚫 User timed out for 24h`;
 
         data.warns = 0;
         data.history = [];
@@ -221,29 +224,23 @@ Reason: ${reason}`;
 
       await data.save();
 
-      // DM USER
-      await member.send(`⚠️ You were warned in ${interaction.guild.name}
-Reason: ${reason}
-Warns: ${data.warns}/3`).catch(() => {});
-
+      await member.send(`⚠️ You were warned\nReason: ${reason}\nWarns: ${data.warns}/3`).catch(()=>{});
       await interaction.channel.send(msg);
+
       return interaction.editReply("Warn added");
     }
 
-    // UNWARN
     if (cmd === "unwarn") {
       let data = await Warn.findOne({ userId: member.id });
-
       if (!data || data.warns === 0)
-        return interaction.editReply("No warns to remove");
+        return interaction.editReply("No warns");
 
       data.warns--;
       data.history.pop();
-
       await data.save();
 
       await interaction.channel.send(`✅ <@${member.id}> warn removed (${data.warns}/3)`);
-      return interaction.editReply("Warn removed");
+      return interaction.editReply("Done");
     }
 
     if (cmd === "clearwarn") {
@@ -255,19 +252,14 @@ Warns: ${data.warns}/3`).catch(() => {});
       const data = await Warn.findOne({ userId: member.id });
       if (!data) return interaction.editReply("No history");
 
-      return interaction.editReply(
-        data.history.map((h,i)=>`${i+1}. ${h.reason} - ${h.date}`).join("\n")
-      );
+      return interaction.editReply(data.history.map((h,i)=>`${i+1}. ${h.reason}`).join("\n"));
     }
 
     if (cmd === "warnlist") {
       const all = await Warn.find({ warns: { $gt: 0 } });
-      return interaction.editReply(
-        all.map(w=>`<@${w.userId}> → ${w.warns}`).join("\n") || "No warns"
-      );
+      return interaction.editReply(all.map(w=>`<@${w.userId}> → ${w.warns}`).join("\n") || "No warns");
     }
 
-    // MOD COMMANDS
     if (cmd === "kick") {
       await member.kick();
       await interaction.channel.send(`👢 <@${member.id}> kicked`);
@@ -288,7 +280,7 @@ Warns: ${data.warns}/3`).catch(() => {});
 
     if (cmd === "untimeout") {
       await member.timeout(null);
-      return interaction.editReply("Removed timeout");
+      return interaction.editReply("Removed");
     }
 
     if (cmd === "purge") {
@@ -319,4 +311,7 @@ Warns: ${data.warns}/3`).catch(() => {});
   }
 });
 
-client.login(process.env.DISCORD_BOT_TOKEN);
+// LOGIN DEBUG
+client.login(process.env.DISCORD_BOT_TOKEN)
+  .then(() => console.log("✅ Login success"))
+  .catch(err => console.error("❌ Login failed:", err));
