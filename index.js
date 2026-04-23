@@ -53,37 +53,6 @@ const allowedUsers = [
 const purgeRoleId = "1390273593040048220";
 
 // =====================================================
-// ANTI-SPAM
-// =====================================================
-const spamMap = new Map();
-
-client.on("messageCreate", async (message) => {
-  if (!message.guild || message.author.bot) return;
-
-  const id = message.author.id;
-  const now = Date.now();
-
-  const data = spamMap.get(id) || { count: 0, last: now };
-
-  if (now - data.last > 5000) {
-    data.count = 0;
-    data.last = now;
-  }
-
-  data.count++;
-  spamMap.set(id, data);
-
-  if (data.count >= 5) {
-    const member = await message.guild.members.fetch(id).catch(() => null);
-    if (member) {
-      await member.timeout(5 * 60 * 1000, "Anti-spam");
-      message.channel.send(`🚨 ${member.user.tag} muted for spam`);
-    }
-    spamMap.set(id, { count: 0, last: now });
-  }
-});
-
-// =====================================================
 // COMMANDS
 // =====================================================
 const commands = [
@@ -175,14 +144,14 @@ const commands = [
 
 ].map(c => c.toJSON());
 
-// REGISTER
+// ===== REGISTER =====
 client.once("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 });
 
-// HANDLER
+// ===== HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -210,6 +179,7 @@ client.on("interactionCreate", async (interaction) => {
 
     if (cmd === "ping") return interaction.editReply("🏓 Pong!");
 
+    // ANNOUNCE
     if (cmd === "announce") {
       const msg = interaction.options.getString("message");
       const channel = interaction.options.getChannel("channel");
@@ -232,30 +202,72 @@ client.on("interactionCreate", async (interaction) => {
       data.warns++;
       data.history.push({ reason, date: new Date().toLocaleString() });
 
+      let msg;
+
       if (data.warns >= 3) {
         await member.timeout(86400000, "3 warns");
+
+        msg = `⚠️ <@${member.id}> has been warned (3/3)
+Reason: ${reason}
+
+🚫 User reached max warns and has been timed out for 24h`;
+
         data.warns = 0;
         data.history = [];
+      } else {
+        msg = `⚠️ <@${member.id}> has been warned (${data.warns}/3)
+Reason: ${reason}`;
       }
 
       await data.save();
 
-      await interaction.channel.send(`⚠️ <@${member.id}> warned\nReason: ${reason}`);
-      return interaction.editReply("Warned");
+      // DM USER
+      await member.send(`⚠️ You were warned in ${interaction.guild.name}
+Reason: ${reason}
+Warns: ${data.warns}/3`).catch(() => {});
+
+      await interaction.channel.send(msg);
+      return interaction.editReply("Warn added");
+    }
+
+    // UNWARN
+    if (cmd === "unwarn") {
+      let data = await Warn.findOne({ userId: member.id });
+
+      if (!data || data.warns === 0)
+        return interaction.editReply("No warns to remove");
+
+      data.warns--;
+      data.history.pop();
+
+      await data.save();
+
+      await interaction.channel.send(`✅ <@${member.id}> warn removed (${data.warns}/3)`);
+      return interaction.editReply("Warn removed");
+    }
+
+    if (cmd === "clearwarn") {
+      await Warn.deleteOne({ userId: member.id });
+      return interaction.editReply("Cleared");
     }
 
     if (cmd === "warninfo") {
       const data = await Warn.findOne({ userId: member.id });
       if (!data) return interaction.editReply("No history");
 
-      return interaction.editReply(data.history.map((h,i)=>`${i+1}. ${h.reason}`).join("\n"));
+      return interaction.editReply(
+        data.history.map((h,i)=>`${i+1}. ${h.reason} - ${h.date}`).join("\n")
+      );
     }
 
     if (cmd === "warnlist") {
       const all = await Warn.find({ warns: { $gt: 0 } });
-      return interaction.editReply(all.map(w=>`<@${w.userId}> → ${w.warns}`).join("\n") || "No warns");
+      return interaction.editReply(
+        all.map(w=>`<@${w.userId}> → ${w.warns}`).join("\n") || "No warns"
+      );
     }
 
+    // MOD COMMANDS
     if (cmd === "kick") {
       await member.kick();
       await interaction.channel.send(`👢 <@${member.id}> kicked`);
@@ -282,7 +294,7 @@ client.on("interactionCreate", async (interaction) => {
     if (cmd === "purge") {
       const amount = interaction.options.getInteger("amount");
       await interaction.channel.bulkDelete(amount, true);
-      return interaction.editReply("Deleted");
+      return interaction.editReply(`Deleted ${amount}`);
     }
 
     if (cmd === "addrole") {
@@ -299,22 +311,6 @@ client.on("interactionCreate", async (interaction) => {
 
       for (const r of roles) await member.roles.remove(r);
       return interaction.editReply("Removed");
-    }
-
-    if (cmd === "unwarn") {
-      let data = await Warn.findOne({ userId: member.id });
-      if (!data) return interaction.editReply("No warns");
-
-      data.warns--;
-      data.history.pop();
-      await data.save();
-
-      return interaction.editReply("Unwarned");
-    }
-
-    if (cmd === "clearwarn") {
-      await Warn.deleteOne({ userId: member.id });
-      return interaction.editReply("Cleared");
     }
 
   } catch (err) {
