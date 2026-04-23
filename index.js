@@ -32,7 +32,13 @@ mongoose.connect(process.env.MONGO_URI)
 // ===== WARN MODEL =====
 const Warn = mongoose.model("Warn", new mongoose.Schema({
   userId: String,
-  warns: Number
+  warns: Number,
+  history: [
+    {
+      reason: String,
+      date: String
+    }
+  ]
 }));
 
 // ===== CLIENT =====
@@ -81,6 +87,12 @@ const commands = [
       o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
+    .setName("warnlist")
+    .setDescription("Check warns")
+    .addUserOption(o =>
+      o.setName("user").setDescription("User (optional)")),
+
+  new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
     .addUserOption(o =>
@@ -118,7 +130,6 @@ const commands = [
     .addIntegerOption(o =>
       o.setName("amount").setDescription("Amount").setRequired(true)),
 
-  // ===== ADD ROLE (5 ROLES) =====
   new SlashCommandBuilder()
     .setName("addrole")
     .setDescription("Add multiple roles")
@@ -129,7 +140,6 @@ const commands = [
     .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
     .addRoleOption(o => o.setName("role5").setDescription("Role 5")),
 
-  // ===== REMOVE ROLE (5 ROLES) =====
   new SlashCommandBuilder()
     .setName("removerole")
     .setDescription("Remove multiple roles")
@@ -172,7 +182,7 @@ client.on("interactionCreate", async (interaction) => {
     const allowed = allowedUsers.includes(interaction.user.id);
     const member = interaction.options.getMember("user");
 
-    if (interaction.commandName !== "ping" && !allowed)
+    if (!["ping", "warnlist"].includes(interaction.commandName) && !allowed)
       return interaction.editReply("❌ No permission");
 
     // ===== ANNOUNCE =====
@@ -208,26 +218,51 @@ client.on("interactionCreate", async (interaction) => {
       const reason = interaction.options.getString("reason");
 
       let data = await Warn.findOne({ userId: member.id });
-      if (!data) data = new Warn({ userId: member.id, warns: 0 });
+      if (!data) data = new Warn({ userId: member.id, warns: 0, history: [] });
 
       data.warns++;
+      data.history.push({
+        reason,
+        date: new Date().toLocaleString()
+      });
 
       if (data.warns >= 3) {
         await member.timeout(86400000, "3 warns");
+        await member.send(`🚫 Timeout 24h\nReason: ${reason}`).catch(()=>{});
+
         data.warns = 0;
+        data.history = [];
         await data.save();
 
-        await member.send(`🚫 Timeout 24h\nReason: ${reason}`).catch(()=>{});
         await interaction.channel.send(`🚫 ${member.user.tag} timed out (3 warns)`);
-
         return interaction.editReply("✅ Done");
       }
 
       await data.save();
+
       await member.send(`⚠️ Warn\nReason: ${reason}`).catch(()=>{});
       await interaction.channel.send(`⚠️ ${member.user.tag} warned (${data.warns}/3)`);
 
       return interaction.editReply("✅ Done");
+    }
+
+    // ===== WARNLIST =====
+    if (interaction.commandName === "warnlist") {
+      const target = interaction.options.getMember("user") || interaction.member;
+
+      let data = await Warn.findOne({ userId: target.id });
+
+      if (!data || data.warns === 0) {
+        return interaction.editReply(`📊 ${target.user.tag} has 0 warns`);
+      }
+
+      let historyText = data.history
+        .map((w, i) => `**${i + 1}.** ${w.reason}\n🕒 ${w.date}`)
+        .join("\n\n");
+
+      return interaction.editReply(
+        `📊 ${target.user.tag} Warns: ${data.warns}/3\n\n${historyText}`
+      );
     }
 
     // ===== UNWARN =====
@@ -238,21 +273,18 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.editReply("⚠️ No warns");
 
       data.warns--;
+      data.history.pop();
       await data.save();
 
-      await member.send("✅ Warn removed").catch(()=>{});
       await interaction.channel.send(`✅ ${member.user.tag} unwarned (${data.warns}/3)`);
-
       return interaction.editReply("✅ Done");
     }
 
     // ===== KICK =====
     if (interaction.commandName === "kick") {
       const reason = interaction.options.getString("reason");
-
       await member.send(`👢 Kicked\nReason: ${reason}`).catch(()=>{});
       await member.kick(reason);
-
       await interaction.channel.send(`👢 ${member.user.tag} kicked\nReason: ${reason}`);
       return interaction.editReply("✅ Done");
     }
@@ -260,10 +292,8 @@ client.on("interactionCreate", async (interaction) => {
     // ===== BAN =====
     if (interaction.commandName === "ban") {
       const reason = interaction.options.getString("reason");
-
       await member.send(`🔨 Banned\nReason: ${reason}`).catch(()=>{});
       await member.ban({ reason });
-
       await interaction.channel.send(`🔨 ${member.user.tag} banned\nReason: ${reason}`);
       return interaction.editReply("✅ Done");
     }
