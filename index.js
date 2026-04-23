@@ -33,7 +33,12 @@ mongoose.connect(process.env.MONGO_URI)
 const Warn = mongoose.model("Warn", new mongoose.Schema({
   userId: String,
   warns: Number,
-  history: [{ reason: String, date: String }]
+  history: [
+    {
+      reason: String,
+      date: String
+    }
+  ]
 }));
 
 // ===== CLIENT =====
@@ -44,14 +49,15 @@ const client = new Client({
   ]
 });
 
-// ===== CONFIG =====
+// ===== ALLOWED USERS =====
 const allowedUsers = [
   "1390273593040048220",
   "1448606724100456459",
   "1420063137838923868"
 ];
 
-const PURGE_ROLE_ID = "1390273593040048220"; // role id
+// ===== ROLE FOR PURGE =====
+const purgeRoleId = "1390273593040048220";
 
 // ===== COMMANDS =====
 const commands = [
@@ -87,7 +93,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("warninfo")
-    .setDescription("See warn history")
+    .setDescription("Full warn history of user")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
@@ -121,7 +127,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("addrole")
-    .setDescription("Add roles")
+    .setDescription("Add multiple roles")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
     .addRoleOption(o => o.setName("role2").setDescription("Role"))
@@ -131,7 +137,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("removerole")
-    .setDescription("Remove roles")
+    .setDescription("Remove multiple roles")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
     .addRoleOption(o => o.setName("role2").setDescription("Role"))
@@ -152,72 +158,186 @@ client.once("clientReady", async () => {
   console.log("Commands registered");
 });
 
-// ===== HANDLER =====
+// ===== BUTTON =====
+client.on("interactionCreate", async (i) => {
+  if (!i.isButton()) return;
+  if (i.customId === "dismiss") {
+    return i.update({ content: "✅ Closed", components: [] });
+  }
+});
+
+// ===== COMMAND HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   await interaction.deferReply({ ephemeral: true });
 
   try {
-    const userId = interaction.user.id;
+    const command = interaction.commandName;
+
     const member = interaction.options.getMember("user");
+    const allowed = allowedUsers.includes(interaction.user.id);
 
-    const isAllowed = allowedUsers.includes(userId);
-    const hasPurgeRole = interaction.member.roles.cache.has(PURGE_ROLE_ID);
+    const publicCommands = ["ping", "warnlist", "warninfo"];
 
-    // ===== PERMISSION LOGIC =====
-    if (interaction.commandName === "purge") {
-      if (!isAllowed && !hasPurgeRole)
-        return interaction.editReply("❌ No permission");
-    } else if (!["ping", "warnlist", "warninfo"].includes(interaction.commandName)) {
-      if (!isAllowed)
-        return interaction.editReply("❌ No permission");
-    }
+    // ===== ROLE CHECK FOR PURGE =====
+    const hasPurgeRole =
+      interaction.member?.roles?.cache?.has(purgeRoleId);
 
-    // ===== WARNLIST (PUBLIC) =====
-    if (interaction.commandName === "warnlist") {
-      const users = await Warn.find({ warns: { $gt: 0 } });
-
-      if (!users.length)
-        return interaction.editReply("✅ No warned users");
-
-      const text = users.map(u => `<@${u.userId}> - ${u.warns}/3`).join("\n");
-
-      return interaction.editReply(text);
-    }
-
-    // ===== WARNINFO (PUBLIC) =====
-    if (interaction.commandName === "warninfo") {
-      const data = await Warn.findOne({ userId: member.id });
-
-      if (!data || data.warns === 0)
-        return interaction.editReply("✅ No warns");
-
-      const history = data.history
-        .map((h, i) => `${i + 1}. ${h.reason} | ${h.date}`)
-        .join("\n");
-
-      return interaction.editReply(
-        `User: ${member.user.tag}\nWarns: ${data.warns}/3\n\n${history}`
-      );
-    }
-
-    // ===== PURGE =====
-    if (interaction.commandName === "purge") {
-      const amt = interaction.options.getInteger("amount");
-      await interaction.channel.bulkDelete(amt, true);
-      return interaction.editReply(`🧹 Deleted ${amt}`);
+    // ===== PERMISSION SYSTEM =====
+    if (!publicCommands.includes(command)) {
+      if (command === "purge") {
+        if (!allowed && !hasPurgeRole)
+          return interaction.editReply("❌ No permission for purge");
+      } else {
+        if (!allowed)
+          return interaction.editReply("❌ No permission");
+      }
     }
 
     // ===== PING =====
-    if (interaction.commandName === "ping") {
+    if (command === "ping") {
       return interaction.editReply("🏓 Pong!");
+    }
+
+    // ===== WARNLIST (EVERYONE) =====
+    if (command === "warnlist") {
+      const all = await Warn.find({ warns: { $gt: 0 } });
+      if (!all.length) return interaction.editReply("No warned users");
+
+      const text = all.map(w => `<@${w.userId}> → ${w.warns} warns`).join("\n");
+      return interaction.editReply(text);
+    }
+
+    // ===== WARNINFO (EVERYONE) =====
+    if (command === "warninfo") {
+      const data = await Warn.findOne({ userId: member.id });
+
+      if (!data || !data.history.length)
+        return interaction.editReply("No warning history");
+
+      const text = data.history
+        .map((h, i) => `${i + 1}. ${h.reason} - ${h.date}`)
+        .join("\n");
+
+      return interaction.editReply(`📄 Warn History of <@${member.id}>\n\n${text}`);
+    }
+
+    // ===== ANNOUNCE =====
+    if (command === "announce") {
+      const msg = interaction.options.getString("message");
+      const channel = interaction.options.getChannel("channel");
+      const image = interaction.options.getString("image");
+
+      if (image) {
+        await channel.send({ content: msg, embeds: [{ image: { url: image } }] });
+      } else {
+        await channel.send(msg);
+      }
+
+      return interaction.editReply("Announcement sent 📤");
+    }
+
+    // ===== WARN SYSTEM =====
+    if (command === "warn") {
+      const reason = interaction.options.getString("reason");
+
+      let data = await Warn.findOne({ userId: member.id });
+      if (!data) data = new Warn({ userId: member.id, warns: 0, history: [] });
+
+      data.warns++;
+      data.history.push({ reason, date: new Date().toLocaleString() });
+
+      if (data.warns >= 3) {
+        await member.timeout(86400000, "3 warns");
+        data.warns = 0;
+        data.history = [];
+        await data.save();
+
+        return interaction.editReply("User timed out (3 warns)");
+      }
+
+      await data.save();
+      return interaction.editReply(`Warned (${data.warns}/3)`);
+    }
+
+    if (command === "clearwarn") {
+      await Warn.deleteOne({ userId: member.id });
+      return interaction.editReply("Cleared all warns");
+    }
+
+    if (command === "unwarn") {
+      let data = await Warn.findOne({ userId: member.id });
+      if (!data || data.warns === 0)
+        return interaction.editReply("No warns");
+
+      data.warns--;
+      data.history.pop();
+      await data.save();
+
+      return interaction.editReply("Unwarned");
+    }
+
+    // ===== PURGE (ROLE + ID ONLY) =====
+    if (command === "purge") {
+      const amt = interaction.options.getInteger("amount");
+
+      await interaction.channel.bulkDelete(amt, true);
+      return interaction.editReply(`Deleted ${amt} messages`);
+    }
+
+    // ===== KICK =====
+    if (command === "kick") {
+      const r = interaction.options.getString("reason");
+      await member.kick(r);
+      return interaction.editReply("Kicked");
+    }
+
+    // ===== BAN =====
+    if (command === "ban") {
+      const r = interaction.options.getString("reason");
+      await member.ban({ reason: r });
+      return interaction.editReply("Banned");
+    }
+
+    // ===== TIMEOUT =====
+    if (command === "timeout") {
+      const min = interaction.options.getInteger("duration");
+      const r = interaction.options.getString("reason");
+
+      await member.timeout(min * 60000, r);
+      return interaction.editReply("Timed out");
+    }
+
+    if (command === "untimeout") {
+      await member.timeout(null);
+      return interaction.editReply("Timeout removed");
+    }
+
+    // ===== ROLE SYSTEM =====
+    if (command === "addrole") {
+      const roles = ["role1","role2","role3","role4","role5"]
+        .map(r => interaction.options.getRole(r))
+        .filter(Boolean);
+
+      for (const role of roles) await member.roles.add(role);
+      return interaction.editReply("Roles added");
+    }
+
+    if (command === "removerole") {
+      const roles = ["role1","role2","role3","role4","role5"]
+        .map(r => interaction.options.getRole(r))
+        .filter(Boolean);
+
+      for (const role of roles) await member.roles.remove(role);
+      return interaction.editReply("Roles removed");
     }
 
   } catch (err) {
     console.error(err);
-    interaction.editReply("❌ Error");
+    return interaction.editReply("❌ Error");
   }
 });
 
+// ===== LOGIN =====
 client.login(process.env.DISCORD_BOT_TOKEN);
