@@ -53,6 +53,37 @@ const allowedUsers = [
 const purgeRoleId = "1390273593040048220";
 
 // =====================================================
+// ANTI-SPAM
+// =====================================================
+const spamMap = new Map();
+
+client.on("messageCreate", async (message) => {
+  if (!message.guild || message.author.bot) return;
+
+  const id = message.author.id;
+  const now = Date.now();
+
+  const data = spamMap.get(id) || { count: 0, last: now };
+
+  if (now - data.last > 5000) {
+    data.count = 0;
+    data.last = now;
+  }
+
+  data.count++;
+  spamMap.set(id, data);
+
+  if (data.count >= 5) {
+    const member = await message.guild.members.fetch(id).catch(() => null);
+    if (member) {
+      await member.timeout(5 * 60 * 1000, "Anti-spam");
+      message.channel.send(`🚨 ${member.user.tag} muted for spam`);
+    }
+    spamMap.set(id, { count: 0, last: now });
+  }
+});
+
+// =====================================================
 // COMMANDS
 // =====================================================
 const commands = [
@@ -144,17 +175,14 @@ const commands = [
 
 ].map(c => c.toJSON());
 
-// ===== REGISTER =====
+// REGISTER
 client.once("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
-
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-
-  console.log("Commands registered");
 });
 
-// ===== HANDLER =====
+// HANDLER
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -163,15 +191,21 @@ client.on("interactionCreate", async (interaction) => {
   try {
     const cmd = interaction.commandName;
     const allowed = allowedUsers.includes(interaction.user.id);
+    const hasRole = interaction.member.roles.cache.has(purgeRoleId);
 
     const user = interaction.options.getUser("user");
     const member = user
       ? await interaction.guild.members.fetch(user.id).catch(() => null)
       : null;
 
-    // ===== PERMISSION =====
-    if (!["ping","warnlist","warninfo"].includes(cmd) && !allowed) {
-      return interaction.editReply("❌ No permission");
+    // PERMISSIONS
+    if (!["ping","warnlist","warninfo"].includes(cmd)) {
+      if (cmd === "purge") {
+        if (!allowed && !hasRole)
+          return interaction.editReply("❌ No permission");
+      } else if (!allowed) {
+        return interaction.editReply("❌ No permission");
+      }
     }
 
     if (cmd === "ping") return interaction.editReply("🏓 Pong!");
@@ -189,7 +223,7 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply("📢 Sent");
     }
 
-    // ===== WARN =====
+    // WARN
     if (cmd === "warn") {
       const reason = interaction.options.getString("reason");
 
@@ -199,14 +233,14 @@ client.on("interactionCreate", async (interaction) => {
       data.history.push({ reason, date: new Date().toLocaleString() });
 
       if (data.warns >= 3) {
-        await member.timeout(24 * 60 * 60 * 1000, "3 warns");
+        await member.timeout(86400000, "3 warns");
         data.warns = 0;
         data.history = [];
       }
 
       await data.save();
 
-      await interaction.channel.send(`⚠️ <@${member.id}> has been warned\nReason: ${reason}`);
+      await interaction.channel.send(`⚠️ <@${member.id}> warned\nReason: ${reason}`);
       return interaction.editReply("Warned");
     }
 
@@ -214,30 +248,73 @@ client.on("interactionCreate", async (interaction) => {
       const data = await Warn.findOne({ userId: member.id });
       if (!data) return interaction.editReply("No history");
 
-      return interaction.editReply(
-        data.history.map((h,i)=>`${i+1}. ${h.reason} - ${h.date}`).join("\n")
-      );
+      return interaction.editReply(data.history.map((h,i)=>`${i+1}. ${h.reason}`).join("\n"));
     }
 
     if (cmd === "warnlist") {
       const all = await Warn.find({ warns: { $gt: 0 } });
-      return interaction.editReply(
-        all.map(w=>`<@${w.userId}> → ${w.warns}`).join("\n") || "No warns"
-      );
+      return interaction.editReply(all.map(w=>`<@${w.userId}> → ${w.warns}`).join("\n") || "No warns");
     }
 
     if (cmd === "kick") {
-      const reason = interaction.options.getString("reason");
-      await member.kick(reason);
-      await interaction.channel.send(`👢 <@${member.id}> has been kicked\nReason: ${reason}`);
-      return interaction.editReply("Kicked");
+      await member.kick();
+      await interaction.channel.send(`👢 <@${member.id}> kicked`);
+      return interaction.editReply("Done");
     }
 
     if (cmd === "ban") {
-      const reason = interaction.options.getString("reason");
-      await member.ban({ reason });
-      await interaction.channel.send(`🔨 <@${member.id}> has been banned\nReason: ${reason}`);
-      return interaction.editReply("Banned");
+      await member.ban();
+      await interaction.channel.send(`🔨 <@${member.id}> banned`);
+      return interaction.editReply("Done");
+    }
+
+    if (cmd === "timeout") {
+      const d = interaction.options.getInteger("duration");
+      await member.timeout(d * 60000);
+      return interaction.editReply("Timed out");
+    }
+
+    if (cmd === "untimeout") {
+      await member.timeout(null);
+      return interaction.editReply("Removed timeout");
+    }
+
+    if (cmd === "purge") {
+      const amount = interaction.options.getInteger("amount");
+      await interaction.channel.bulkDelete(amount, true);
+      return interaction.editReply("Deleted");
+    }
+
+    if (cmd === "addrole") {
+      const roles = ["role1","role2","role3","role4","role5"]
+        .map(r=>interaction.options.getRole(r)).filter(Boolean);
+
+      for (const r of roles) await member.roles.add(r);
+      return interaction.editReply("Added");
+    }
+
+    if (cmd === "removerole") {
+      const roles = ["role1","role2","role3","role4","role5"]
+        .map(r=>interaction.options.getRole(r)).filter(Boolean);
+
+      for (const r of roles) await member.roles.remove(r);
+      return interaction.editReply("Removed");
+    }
+
+    if (cmd === "unwarn") {
+      let data = await Warn.findOne({ userId: member.id });
+      if (!data) return interaction.editReply("No warns");
+
+      data.warns--;
+      data.history.pop();
+      await data.save();
+
+      return interaction.editReply("Unwarned");
+    }
+
+    if (cmd === "clearwarn") {
+      await Warn.deleteOne({ userId: member.id });
+      return interaction.editReply("Cleared");
     }
 
   } catch (err) {
