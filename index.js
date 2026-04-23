@@ -33,12 +33,7 @@ mongoose.connect(process.env.MONGO_URI)
 const Warn = mongoose.model("Warn", new mongoose.Schema({
   userId: String,
   warns: Number,
-  history: [
-    {
-      reason: String,
-      date: String
-    }
-  ]
+  history: [{ reason: String, date: String }]
 }));
 
 // ===== CLIENT =====
@@ -49,12 +44,14 @@ const client = new Client({
   ]
 });
 
-// ===== ALLOWED USERS =====
+// ===== CONFIG =====
 const allowedUsers = [
   "1390273593040048220",
   "1448606724100456459",
   "1420063137838923868"
 ];
+
+const PURGE_ROLE_ID = "1390273593040048220"; // role id
 
 // ===== COMMANDS =====
 const commands = [
@@ -64,91 +61,83 @@ const commands = [
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send message with optional image")
-    .addStringOption(o =>
-      o.setName("message").setDescription("Text message").setRequired(true))
-    .addChannelOption(o =>
-      o.setName("channel").setDescription("Target channel").setRequired(true)
-        .addChannelTypes(ChannelType.GuildText))
-    .addStringOption(o =>
-      o.setName("image").setDescription("Image URL")),
+    .addStringOption(o => o.setName("message").setDescription("Text").setRequired(true))
+    .addChannelOption(o => o.setName("channel").setDescription("Channel").setRequired(true).addChannelTypes(ChannelType.GuildText))
+    .addStringOption(o => o.setName("image").setDescription("Image URL")),
 
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o =>
-      o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("unwarn")
-    .setDescription("Remove a warn")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)),
+    .setDescription("Remove one warn")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("clearwarn")
+    .setDescription("Clear all warns")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("warnlist")
-    .setDescription("Check warns (global or user)")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User (optional)")),
+    .setDescription("See all warned users"),
+
+  new SlashCommandBuilder()
+    .setName("warninfo")
+    .setDescription("See warn history")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o =>
-      o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o =>
-      o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
     .setDescription("Timeout user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o =>
-      o.setName("duration").setDescription("Minutes").setRequired(true))
-    .addStringOption(o =>
-      o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("untimeout")
     .setDescription("Remove timeout")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o =>
-      o.setName("amount").setDescription("Amount").setRequired(true)),
+    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("addrole")
-    .setDescription("Add multiple roles")
+    .setDescription("Add roles")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
-    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
-    .addRoleOption(o => o.setName("role3").setDescription("Role 3"))
-    .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
-    .addRoleOption(o => o.setName("role5").setDescription("Role 5")),
+    .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
+    .addRoleOption(o => o.setName("role2").setDescription("Role"))
+    .addRoleOption(o => o.setName("role3").setDescription("Role"))
+    .addRoleOption(o => o.setName("role4").setDescription("Role"))
+    .addRoleOption(o => o.setName("role5").setDescription("Role")),
 
   new SlashCommandBuilder()
     .setName("removerole")
-    .setDescription("Remove multiple roles")
+    .setDescription("Remove roles")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
-    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
-    .addRoleOption(o => o.setName("role3").setDescription("Role 3"))
-    .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
-    .addRoleOption(o => o.setName("role5").setDescription("Role 5"))
+    .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
+    .addRoleOption(o => o.setName("role2").setDescription("Role"))
+    .addRoleOption(o => o.setName("role3").setDescription("Role"))
+    .addRoleOption(o => o.setName("role4").setDescription("Role"))
+    .addRoleOption(o => o.setName("role5").setDescription("Role"))
 
 ].map(c => c.toJSON());
 
@@ -163,184 +152,54 @@ client.once("clientReady", async () => {
   console.log("Commands registered");
 });
 
-// ===== BUTTON =====
-client.on("interactionCreate", async (i) => {
-  if (!i.isButton()) return;
-
-  if (i.customId === "dismiss") {
-    return i.update({ content: "✅ Closed", components: [] });
-  }
-});
-
-// ===== COMMAND HANDLER =====
+// ===== HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   await interaction.deferReply({ ephemeral: true });
 
   try {
-    const allowed = allowedUsers.includes(interaction.user.id);
+    const userId = interaction.user.id;
     const member = interaction.options.getMember("user");
 
-    // ✅ PUBLIC COMMANDS
-    if (!["ping", "warnlist"].includes(interaction.commandName) && !allowed)
-      return interaction.editReply("❌ No permission");
+    const isAllowed = allowedUsers.includes(userId);
+    const hasPurgeRole = interaction.member.roles.cache.has(PURGE_ROLE_ID);
 
-    // ===== ANNOUNCE =====
-    if (interaction.commandName === "announce") {
-      const msg = interaction.options.getString("message");
-      const channel = interaction.options.getChannel("channel");
-      const image = interaction.options.getString("image");
-
-      if (image) {
-        await channel.send({
-          content: msg,
-          embeds: [{ image: { url: image } }]
-        });
-      } else {
-        await channel.send(msg);
-      }
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("dismiss")
-          .setLabel("Dismiss")
-          .setStyle(ButtonStyle.Secondary)
-      );
-
-      return interaction.editReply({
-        content: "📤 Announcement sent",
-        components: [row]
-      });
+    // ===== PERMISSION LOGIC =====
+    if (interaction.commandName === "purge") {
+      if (!isAllowed && !hasPurgeRole)
+        return interaction.editReply("❌ No permission");
+    } else if (!["ping", "warnlist", "warninfo"].includes(interaction.commandName)) {
+      if (!isAllowed)
+        return interaction.editReply("❌ No permission");
     }
 
-    // ===== WARN =====
-    if (interaction.commandName === "warn") {
-      const reason = interaction.options.getString("reason");
-
-      let data = await Warn.findOne({ userId: member.id });
-      if (!data) data = new Warn({ userId: member.id, warns: 0, history: [] });
-
-      data.warns++;
-      data.history.push({
-        reason,
-        date: new Date().toLocaleString()
-      });
-
-      if (data.warns >= 3) {
-        await member.timeout(86400000, "3 warns");
-        await member.send(`🚫 Timeout 24h\nReason: ${reason}`).catch(()=>{});
-
-        data.warns = 0;
-        data.history = [];
-        await data.save();
-
-        await interaction.channel.send(`🚫 ${member.user.tag} timed out (3 warns)`);
-        return interaction.editReply("✅ Done");
-      }
-
-      await data.save();
-
-      await member.send(`⚠️ Warn\nReason: ${reason}`).catch(()=>{});
-      await interaction.channel.send(`⚠️ ${member.user.tag} warned (${data.warns}/3)`);
-
-      return interaction.editReply("✅ Done");
-    }
-
-    // ===== WARNLIST =====
+    // ===== WARNLIST (PUBLIC) =====
     if (interaction.commandName === "warnlist") {
+      const users = await Warn.find({ warns: { $gt: 0 } });
 
-      const target = interaction.options.getMember("user");
+      if (!users.length)
+        return interaction.editReply("✅ No warned users");
 
-      // USER HISTORY
-      if (target) {
-        let data = await Warn.findOne({ userId: target.id });
-
-        if (!data || data.warns === 0) {
-          return interaction.editReply(`📊 ${target.user.tag} has 0 warns`);
-        }
-
-        let historyText = data.history
-          .map((w, i) => `**${i + 1}.** ${w.reason}\n🕒 ${w.date}`)
-          .join("\n\n");
-
-        return interaction.editReply(
-          `📊 ${target.user.tag} Warns: ${data.warns}/3\n\n${historyText}`
-        );
-      }
-
-      // GLOBAL
-      const allData = await Warn.find({ warns: { $gt: 0 } });
-
-      if (!allData.length) {
-        return interaction.editReply("📊 No users have warns");
-      }
-
-      let text = "📊 Warned Users\n\n";
-
-      for (let i = 0; i < allData.length; i++) {
-        const user = await client.users.fetch(allData[i].userId).catch(() => null);
-        if (!user) continue;
-
-        text += `${i + 1}. ${user.tag} → ${allData[i].warns} warn(s)\n`;
-      }
+      const text = users.map(u => `<@${u.userId}> - ${u.warns}/3`).join("\n");
 
       return interaction.editReply(text);
     }
 
-    // ===== UNWARN =====
-    if (interaction.commandName === "unwarn") {
-      let data = await Warn.findOne({ userId: member.id });
+    // ===== WARNINFO (PUBLIC) =====
+    if (interaction.commandName === "warninfo") {
+      const data = await Warn.findOne({ userId: member.id });
 
       if (!data || data.warns === 0)
-        return interaction.editReply("⚠️ No warns");
+        return interaction.editReply("✅ No warns");
 
-      data.warns--;
-      data.history.pop();
-      await data.save();
+      const history = data.history
+        .map((h, i) => `${i + 1}. ${h.reason} | ${h.date}`)
+        .join("\n");
 
-      await interaction.channel.send(`✅ ${member.user.tag} unwarned (${data.warns}/3)`);
-      return interaction.editReply("✅ Done");
-    }
-
-    // ===== KICK =====
-    if (interaction.commandName === "kick") {
-      const reason = interaction.options.getString("reason");
-      await member.send(`👢 Kicked\nReason: ${reason}`).catch(()=>{});
-      await member.kick(reason);
-      await interaction.channel.send(`👢 ${member.user.tag} kicked\nReason: ${reason}`);
-      return interaction.editReply("✅ Done");
-    }
-
-    // ===== BAN =====
-    if (interaction.commandName === "ban") {
-      const reason = interaction.options.getString("reason");
-      await member.send(`🔨 Banned\nReason: ${reason}`).catch(()=>{});
-      await member.ban({ reason });
-      await interaction.channel.send(`🔨 ${member.user.tag} banned\nReason: ${reason}`);
-      return interaction.editReply("✅ Done");
-    }
-
-    // ===== TIMEOUT =====
-    if (interaction.commandName === "timeout") {
-      const min = interaction.options.getInteger("duration");
-      const reason = interaction.options.getString("reason");
-      const hrs = (min / 60).toFixed(1);
-
-      await member.timeout(min * 60000, reason);
-
-      await interaction.channel.send(
-        `⏱️ ${member.user.tag} timeout\nDuration: ${min} min (${hrs} hrs)\nReason: ${reason}`
+      return interaction.editReply(
+        `User: ${member.user.tag}\nWarns: ${data.warns}/3\n\n${history}`
       );
-
-      return interaction.editReply("✅ Done");
-    }
-
-    // ===== UNTIMEOUT =====
-    if (interaction.commandName === "untimeout") {
-      await member.timeout(null);
-      await interaction.channel.send(`✅ Timeout removed: ${member.user.tag}`);
-      return interaction.editReply("✅ Done");
     }
 
     // ===== PURGE =====
@@ -350,38 +209,7 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply(`🧹 Deleted ${amt}`);
     }
 
-    // ===== ADD ROLE =====
-    if (interaction.commandName === "addrole") {
-      const roles = [
-        interaction.options.getRole("role1"),
-        interaction.options.getRole("role2"),
-        interaction.options.getRole("role3"),
-        interaction.options.getRole("role4"),
-        interaction.options.getRole("role5")
-      ].filter(Boolean);
-
-      for (const role of roles) await member.roles.add(role);
-
-      await interaction.channel.send(`✅ Added ${roles.length} role(s) to ${member.user.tag}`);
-      return interaction.editReply("✅ Done");
-    }
-
-    // ===== REMOVE ROLE =====
-    if (interaction.commandName === "removerole") {
-      const roles = [
-        interaction.options.getRole("role1"),
-        interaction.options.getRole("role2"),
-        interaction.options.getRole("role3"),
-        interaction.options.getRole("role4"),
-        interaction.options.getRole("role5")
-      ].filter(Boolean);
-
-      for (const role of roles) await member.roles.remove(role);
-
-      await interaction.channel.send(`🗑️ Removed ${roles.length} role(s) from ${member.user.tag}`);
-      return interaction.editReply("✅ Done");
-    }
-
+    // ===== PING =====
     if (interaction.commandName === "ping") {
       return interaction.editReply("🏓 Pong!");
     }
@@ -392,5 +220,4 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ===== LOGIN =====
 client.login(process.env.DISCORD_BOT_TOKEN);
