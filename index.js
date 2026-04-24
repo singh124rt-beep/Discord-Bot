@@ -15,6 +15,8 @@ const {
   EmbedBuilder
 } = require("discord.js");
 
+console.log("🔥 BOT STARTING...");
+
 // ===== ENV =====
 if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing TOKEN");
 if (!process.env.MONGO_URI) throw new Error("Missing MONGO");
@@ -79,41 +81,41 @@ const commands = [
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("unwarn")
     .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("clearwarn")
-    .setDescription("Clear warns")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+    .setDescription("Clear all warns")
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder().setName("warnlist").setDescription("Show warns"),
 
   new SlashCommandBuilder()
     .setName("warninfo")
     .setDescription("Warn history")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
-    .setDescription("Kick")
+    .setDescription("Kick user")
     .addUserOption(o => o.setName("user").setRequired(true))
     .addStringOption(o => o.setName("reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
-    .setDescription("Ban")
+    .setDescription("Ban user")
     .addUserOption(o => o.setName("user").setRequired(true))
     .addStringOption(o => o.setName("reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
-    .setDescription("Timeout")
+    .setDescription("Timeout user")
     .addUserOption(o => o.setName("user").setRequired(true))
     .addIntegerOption(o => o.setName("duration").setRequired(true))
     .addStringOption(o => o.setName("reason").setRequired(true)),
@@ -128,7 +130,6 @@ const commands = [
     .setDescription("Delete messages")
     .addIntegerOption(o => o.setName("amount").setRequired(true)),
 
-  // MULTI ROLE
   new SlashCommandBuilder()
     .setName("addrole")
     .setDescription("Add roles")
@@ -157,6 +158,17 @@ client.once("clientReady", async () => {
 
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+
+  console.log("✅ Commands registered");
+});
+
+// ===== BUTTON (DISMISS) =====
+client.on("interactionCreate", async (i) => {
+  if (!i.isButton()) return;
+
+  if (i.customId === "dismiss") {
+    return i.update({ content: "✅ Closed", components: [] });
+  }
 });
 
 // ===== COMMAND HANDLER =====
@@ -165,7 +177,7 @@ client.on("interactionCreate", async (interaction) => {
 
   const cmd = interaction.commandName;
 
-  const publicCmds = ["serverinfo", "warnlist", "warninfo"];
+  const publicCmds = ["serverinfo","warnlist","warninfo"];
 
   await interaction.deferReply({ ephemeral: !publicCmds.includes(cmd) });
 
@@ -175,9 +187,10 @@ client.on("interactionCreate", async (interaction) => {
 
     const user = interaction.options.getUser("user");
     const member = user
-      ? await interaction.guild.members.fetch(user.id).catch(() => null)
+      ? await interaction.guild.members.fetch(user.id).catch(()=>null)
       : null;
 
+    // ===== PERMISSION =====
     if (!["ping","serverinfo","warnlist","warninfo"].includes(cmd)) {
       if (cmd === "purge") {
         if (!allowed && !hasRole) return interaction.editReply("❌ No permission");
@@ -185,6 +198,9 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.editReply("❌ No permission");
       }
     }
+
+    // ===== PING =====
+    if (cmd === "ping") return interaction.editReply("🏓 Pong!");
 
     // ===== SERVER INFO =====
     if (cmd === "serverinfo") {
@@ -195,9 +211,9 @@ client.on("interactionCreate", async (interaction) => {
 
 🎭 Choose roles like Police, Airforce, Criminal, Business Owner.
 
-📜 Follow rules and enjoy realistic RP experience.
+📜 Follow rules and enjoy realistic RP.
 
-🚀 Build your story and grow in the city.`)
+🚀 Build your story and grow.`)
         .setColor("Blue");
 
       return interaction.editReply({ embeds: [embed] });
@@ -214,10 +230,14 @@ client.on("interactionCreate", async (interaction) => {
       else
         await channel.send(msg);
 
-      return interaction.editReply("📤 Announcement sent");
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("dismiss").setLabel("Dismiss").setStyle(ButtonStyle.Secondary)
+      );
+
+      return interaction.editReply({ content: "📤 Sent", components: [row] });
     }
 
-    // ===== WARN SYSTEM =====
+    // ===== WARN =====
     if (cmd === "warn") {
       const reason = interaction.options.getString("reason");
 
@@ -226,22 +246,18 @@ client.on("interactionCreate", async (interaction) => {
       data.warns++;
       data.history.push({ reason, date: new Date().toLocaleString() });
 
-      let msg;
-
       if (data.warns >= 3) {
         await member.timeout(86400000, "3 warns");
-        msg = `🚫 <@${member.id}> timed out (3/3)`;
+        await interaction.channel.send(`🚫 <@${member.id}> timed out (3/3)`);
         data.warns = 0;
         data.history = [];
       } else {
-        msg = `⚠️ <@${member.id}> warned (${data.warns}/3)\nReason: ${reason}`;
+        await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)\nReason: ${reason}`);
       }
 
       await data.save();
 
-      await member.send(`⚠️ Warned\nReason: ${reason}`).catch(()=>{});
-      await interaction.channel.send(msg);
-
+      await member.send(`⚠️ Warn\nReason: ${reason}`).catch(()=>{});
       return interaction.editReply("Warn added");
     }
 
@@ -277,23 +293,69 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply("All warnings removed");
     }
 
+    // ===== MODERATION =====
+    if (cmd === "kick") {
+      await member.kick();
+      await interaction.channel.send(`👢 <@${member.id}> kicked`);
+      return interaction.editReply("Done");
+    }
+
+    if (cmd === "ban") {
+      await member.ban();
+      await interaction.channel.send(`🔨 <@${member.id}> banned`);
+      return interaction.editReply("Done");
+    }
+
+    if (cmd === "timeout") {
+      const d = interaction.options.getInteger("duration");
+      await member.timeout(d * 60000);
+      await interaction.channel.send(`⏱️ <@${member.id}> timeout ${d} min`);
+      return interaction.editReply("Done");
+    }
+
+    if (cmd === "untimeout") {
+      await member.timeout(null);
+      return interaction.editReply("Removed");
+    }
+
+    if (cmd === "purge") {
+      const amount = interaction.options.getInteger("amount");
+      await interaction.channel.bulkDelete(amount, true);
+      return interaction.editReply(`Deleted ${amount}`);
+    }
+
+    if (cmd === "addrole") {
+      const roles = ["role1","role2","role3","role4","role5"]
+        .map(r=>interaction.options.getRole(r)).filter(Boolean);
+
+      for (const r of roles) await member.roles.add(r);
+      return interaction.editReply("Roles added");
+    }
+
+    if (cmd === "removerole") {
+      const roles = ["role1","role2","role3","role4","role5"]
+        .map(r=>interaction.options.getRole(r)).filter(Boolean);
+
+      for (const r of roles) await member.roles.remove(r);
+      return interaction.editReply("Roles removed");
+    }
+
   } catch (err) {
     console.error(err);
-    interaction.editReply("❌ Error");
+    return interaction.editReply("❌ Error");
   }
 });
 
 // ===== GREETING =====
 client.on("messageCreate", (msg) => {
   if (msg.author.bot) return;
-
   const t = msg.content.toLowerCase();
   if (["hi","hello","hey"].includes(t)) {
     msg.reply(`👋 Greetings, ${msg.author.username}! Welcome to CRP 🌆`);
   }
 });
 
-// ===== AI CHAT =====
+// ===== AI =====
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.mentions.has(client.user)) return;
