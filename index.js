@@ -14,9 +14,9 @@ const {
 
 console.log("🔥 BOT STARTING...");
 
-// ================= ENV CHECK =================
-if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing TOKEN");
-if (!process.env.MONGO_URI) throw new Error("Missing MONGO");
+// ================= ENV =================
+if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing DISCORD_BOT_TOKEN");
+if (!process.env.MONGO_URI) throw new Error("Missing MONGO_URI");
 
 // ================= EXPRESS =================
 const app = express();
@@ -84,7 +84,7 @@ function antiSpam(id, content) {
   return data.count >= 5;
 }
 
-// ================= COMMANDS (ALL KEPT) =================
+// ================= COMMANDS =================
 const commands = [
 
   new SlashCommandBuilder().setName("ping").setDescription("Ping command"),
@@ -174,7 +174,7 @@ client.once("ready", async () => {
   console.log("🚀 Commands Registered");
 });
 
-// ================= INTERACTIONS (FIXED SAFE FLOW) =================
+// ================= INTERACTIONS =================
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -182,7 +182,6 @@ client.on("interactionCreate", async (interaction) => {
 
   try {
     const cmd = interaction.commandName;
-
     const publicCmds = ["serverinfo", "warnlist", "warninfo"];
 
     await interaction.deferReply({ ephemeral: !publicCmds.includes(cmd) });
@@ -240,7 +239,6 @@ Enjoy Playing City Role Play 🎉`)
         await member.timeout(24 * 60 * 60 * 1000, "3 warns = 24h timeout");
         data.warns = 0;
         data.history = [];
-
         await interaction.channel.send(`🚫 <@${member.id}> got 24h timeout`);
       } else {
         await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)`);
@@ -291,5 +289,7 @@ client.on("messageCreate", (msg) => {
   }
 });
 
-// ================= LOGIN =================
-client.login(process.env.DISCORD_BOT_TOKEN);
+// ================= LOGIN (FIXED SAFE) =================
+client.login(process.env.DISCORD_BOT_TOKEN)
+  .then(() => console.log("🤖 Logged in successfully"))
+  .catch(err => console.error("❌ LOGIN FAILED:", err));
