@@ -1,3 +1,7 @@
+// =====================================================
+//                    CRP DISCORD BOT
+// =====================================================
+
 const express = require("express");
 const mongoose = require("mongoose");
 const OpenAI = require("openai");
@@ -12,35 +16,46 @@ const {
   EmbedBuilder
 } = require("discord.js");
 
+// ===================== START LOG =====================
 console.log("🔥 BOT STARTING...");
 
-// ================= ENV =================
+// ===================== ENV CHECK =====================
 if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing TOKEN");
 if (!process.env.MONGO_URI) throw new Error("Missing MONGO");
 
-// ================= EXPRESS =================
+// =====================================================
+//                      EXPRESS SERVER
+// =====================================================
 const app = express();
 app.get("/", (req, res) => res.send("Alive"));
-app.listen(3000);
+app.listen(3000, () => console.log("🌐 Web server running"));
 
-// ================= DB =================
+// =====================================================
+//                        DATABASE
+// =====================================================
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ Mongo Connected"))
-  .catch(console.error);
+.then(() => console.log("✅ Mongo Connected"))
+.catch(err => console.log("❌ DB Error", err));
 
-// ================= AI =================
+// =====================================================
+//                         AI
+// =====================================================
 const ai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// ================= WARN MODEL =================
+// =====================================================
+//                      WARN SYSTEM
+// =====================================================
 const Warn = mongoose.model("Warn", new mongoose.Schema({
   userId: String,
   warns: { type: Number, default: 0 },
   history: [{ reason: String, date: String }]
 }));
 
-// ================= CLIENT =================
+// =====================================================
+//                      DISCORD CLIENT
+// =====================================================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -50,7 +65,9 @@ const client = new Client({
   ]
 });
 
-// ================= CONFIG =================
+// =====================================================
+//                    CONFIGURATION
+// =====================================================
 const allowedUsers = [
   "1390273593040048220",
   "1448606724100456459",
@@ -59,151 +76,160 @@ const allowedUsers = [
 
 const purgeRoleId = "1390273593040048220";
 
-// ================= ANTI-SPAM =================
+// =====================================================
+//                   ANTI-SPAM SYSTEM
+// =====================================================
 const spamMap = new Map();
 
-function checkSpam(msg) {
-  const id = msg.author.id;
+function isSpamming(userId, content) {
   const now = Date.now();
 
-  if (!spamMap.has(id)) {
-    spamMap.set(id, { count: 1, last: msg.content, time: now });
+  if (!spamMap.has(userId)) {
+    spamMap.set(userId, { count: 1, last: content, time: now });
     return false;
   }
 
-  const data = spamMap.get(id);
+  const data = spamMap.get(userId);
 
-  if (now - data.time > 3000) {
-    spamMap.set(id, { count: 1, last: msg.content, time: now });
+  if (now - data.time > 4000) {
+    spamMap.set(userId, { count: 1, last: content, time: now });
     return false;
   }
 
-  if (data.last === msg.content) data.count++;
+  if (data.last === content) data.count++;
   else data.count = 1;
 
-  data.last = msg.content;
+  data.last = content;
   data.time = now;
 
-  spamMap.set(id, data);
+  spamMap.set(userId, data);
 
   return data.count >= 5;
 }
 
-// ================= COMMANDS =================
+// =====================================================
+//                    SLASH COMMANDS
+// =====================================================
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Ping"),
+  new SlashCommandBuilder().setName("ping").setDescription("Ping command"),
 
-  new SlashCommandBuilder().setName("announce")
+  new SlashCommandBuilder()
+    .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o => o.setName("message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").addChannelTypes(ChannelType.GuildText)),
+    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
+    .addChannelOption(o => o.setName("channel").setDescription("Channel").addChannelTypes(ChannelType.GuildText))
+    .addStringOption(o => o.setName("image").setDescription("Image URL")),
 
-  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
+  new SlashCommandBuilder()
+    .setName("serverinfo")
+    .setDescription("Show server info (PUBLIC)"),
 
-  new SlashCommandBuilder().setName("warn")
+  new SlashCommandBuilder()
+    .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
-
-  new SlashCommandBuilder().setName("unwarn")
-    .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setRequired(true)),
-
-  new SlashCommandBuilder().setName("clearwarn")
-    .setDescription("Clear warns")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder().setName("warnlist").setDescription("Warn list"),
+  new SlashCommandBuilder().setName("warninfo").setDescription("Warn history"),
 
-  new SlashCommandBuilder().setName("warninfo")
-    .setDescription("Warn history")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+  new SlashCommandBuilder()
+    .setName("unwarn")
+    .setDescription("Remove warning")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder().setName("kick")
+  new SlashCommandBuilder()
+    .setName("clearwarn")
+    .setDescription("Clear warnings")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("kick")
     .setDescription("Kick user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
-  new SlashCommandBuilder().setName("ban")
+  new SlashCommandBuilder()
+    .setName("ban")
     .setDescription("Ban user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
-  new SlashCommandBuilder().setName("timeout")
+  new SlashCommandBuilder()
+    .setName("timeout")
     .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addIntegerOption(o => o.setName("duration").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
-  new SlashCommandBuilder().setName("untimeout")
+  new SlashCommandBuilder()
+    .setName("untimeout")
     .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder().setName("purge")
+  new SlashCommandBuilder()
+    .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setRequired(true)),
+    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true)),
 
-  new SlashCommandBuilder().setName("addrole")
+  new SlashCommandBuilder()
+    .setName("addrole")
     .setDescription("Add roles")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder().setName("removerole")
+  new SlashCommandBuilder()
+    .setName("removerole")
     .setDescription("Remove roles")
-    .addUserOption(o => o.setName("user").setRequired(true))
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
 
 ].map(c => c.toJSON());
 
-// ================= READY =================
+// =====================================================
+//                      READY EVENT
+// =====================================================
 client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
-  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 
-  console.log("🚀 Commands registered");
+  await rest.put(
+    Routes.applicationCommands(client.user.id),
+    { body: commands }
+  );
+
+  console.log("🚀 Commands Registered");
 });
 
-// ================= MAIN HANDLER =================
+// =====================================================
+//                 INTERACTION HANDLER
+// =====================================================
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   const cmd = interaction.commandName;
-  const publicCmds = ["serverinfo","warnlist","warninfo"];
+  const publicCmds = ["serverinfo", "warnlist", "warninfo"];
 
   await interaction.deferReply({ ephemeral: !publicCmds.includes(cmd) });
 
   try {
 
     const user = interaction.options.getUser("user");
-    const member = user ? await interaction.guild.members.fetch(user.id).catch(()=>null) : null;
-
-    if (cmd === "ping") return interaction.editReply("🏓 Pong!");
+    const member = user
+      ? await interaction.guild.members.fetch(user.id).catch(() => null)
+      : null;
 
     // ================= SERVER INFO =================
     if (cmd === "serverinfo") {
       const embed = new EmbedBuilder()
         .setTitle("🌆 City Role Play")
-        .setImage("https://i.imgur.com/JeZR5OO.jpg")
+        .setColor("Blue")
         .setDescription(`👋 Welcome to City Role Play!
 
-Hey there! We're glad to have you join our city 🌆  
-This server is all about creating your own story and living your role.
-
-🎭 Pick Your Role  
-Choose a role that fits your character—citizen, police, criminal, business owner, or anything in between!
-
-📜 Rules First  
-Before you start, make sure to read the rules carefully to keep the roleplay fun and fair for everyone.
-
-🚀 Get Started  
-Head over to the role selection channel and begin your journey in the city!
-
-💬 Need Help?  
-Feel free to ask our team or other members—we’re here to help.
-
-Enjoy Playing City Role Play 🎉`)
-        .setColor("Blue");
+🎭 Create your RP story
+📜 Follow rules
+🚀 Enjoy the city life
+💬 Be active and have fun`);
 
       return interaction.editReply({ embeds: [embed] });
     }
@@ -217,15 +243,14 @@ Enjoy Playing City Role Play 🎉`)
       data.warns++;
       data.history.push({ reason, date: new Date().toLocaleString() });
 
-      // 🔥 3 WARN = 24 HOUR TIMEOUT
       if (data.warns >= 3) {
         await member.timeout(24 * 60 * 60 * 1000, "3 warns = 24h timeout");
         data.warns = 0;
         data.history = [];
 
-        await interaction.channel.send(`🚫 <@${member.id}> timed out for 24 hours (3 warns)`);
+        await interaction.channel.send(`🚫 <@${member.id}> got 24h timeout (3 warns)`);
       } else {
-        await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)\nReason: ${reason}`);
+        await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)`);
       }
 
       await data.save();
@@ -234,7 +259,9 @@ Enjoy Playing City Role Play 🎉`)
 
     if (cmd === "warnlist") {
       const all = await Warn.find({ warns: { $gt: 0 } });
-      return interaction.editReply(all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n") || "No warns");
+      return interaction.editReply(
+        all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n") || "No warns"
+      );
     }
 
     if (cmd === "warninfo") {
@@ -242,24 +269,8 @@ Enjoy Playing City Role Play 🎉`)
       if (!data) return interaction.editReply("No history");
 
       return interaction.editReply(
-        data.history.map((h,i)=>`${i+1}. ${h.reason} (${h.date})`).join("\n")
+        data.history.map((h, i) => `${i + 1}. ${h.reason} (${h.date})`).join("\n")
       );
-    }
-
-    if (cmd === "unwarn") {
-      let data = await Warn.findOne({ userId: member.id });
-      if (!data || data.warns === 0) return interaction.editReply("No warns");
-
-      data.warns--;
-      data.history.pop();
-      await data.save();
-
-      return interaction.editReply("Warning removed");
-    }
-
-    if (cmd === "clearwarn") {
-      await Warn.deleteOne({ userId: member.id });
-      return interaction.editReply("All warnings cleared");
     }
 
   } catch (err) {
@@ -268,20 +279,25 @@ Enjoy Playing City Role Play 🎉`)
   }
 });
 
-// ================= MESSAGE SYSTEM =================
+// =====================================================
+//                 GREETING SYSTEM (ALL USERS)
+// =====================================================
 client.on("messageCreate", (msg) => {
   if (msg.author.bot) return;
 
-  // ANTI-SPAM
-  if (checkSpam(msg)) {
-    msg.delete().catch(()=>{});
-    return msg.channel.send(`⚠️ ${msg.author}, stop spamming!`);
+  if (isSpamming(msg.author.id, msg.content)) {
+    msg.delete().catch(() => {});
+    return msg.channel.send(`⚠️ Stop spamming ${msg.author}`);
   }
 
-  if (["hi","hello","hey"].includes(msg.content.toLowerCase())) {
-    msg.reply(`👋 Hello ${msg.author.username}! Welcome to CRP 🌆`);
+  const text = msg.content.toLowerCase();
+
+  if (["hi", "hello", "hey"].includes(text)) {
+    return msg.reply(`👋 Greetings, ${msg.author.username} Welcome to CRP 🌆`);
   }
 });
 
-// ================= LOGIN =================
+// =====================================================
+//                        LOGIN
+// =====================================================
 client.login(process.env.DISCORD_BOT_TOKEN);
