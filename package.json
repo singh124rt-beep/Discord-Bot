@@ -1,18 +1,15 @@
 {
-  "name": "discord-bot",
+  "name": "crp-bot",
   "version": "1.0.0",
-  "description": "City RP Bot",
+  "description": "City Role Play Discord Bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
-    "express": "^4.18.2",
-    "mongoose": "^8.3.5",
-    "@discordjs/voice": "^0.16.0",
-    "prism-media": "^1.3.5",
-    "ffmpeg-static": "^5.2.0",
-    "fluent-ffmpeg": "^2.1.2"
+    "mongoose": "^8.3.0",
+    "express": "^4.19.2",
+    "openai": "^4.0.0"
   }
 }
