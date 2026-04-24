@@ -14,7 +14,7 @@ const {
 
 console.log("🔥 BOT STARTING...");
 
-// ================= ENV CHECK =================
+// ================= ENV =================
 if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing DISCORD_BOT_TOKEN");
 if (!process.env.MONGO_URI) throw new Error("Missing MONGO_URI");
 
@@ -33,7 +33,7 @@ const ai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// ================= WARN MODEL =================
+// ================= WARN DB =================
 const Warn = mongoose.model("Warn", new mongoose.Schema({
   userId: String,
   warns: { type: Number, default: 0 },
@@ -60,17 +60,17 @@ const allowedUsers = [
 // ================= ANTI SPAM =================
 const spamMap = new Map();
 
-function isSpam(id, msg) {
+function antiSpam(id, content) {
   const now = Date.now();
   const data = spamMap.get(id) || { count: 0, last: "", time: now };
 
   if (now - data.time > 4000) {
-    spamMap.set(id, { count: 1, last: msg, time: now });
+    spamMap.set(id, { count: 1, last: content, time: now });
     return false;
   }
 
-  data.count = (data.last === msg) ? data.count + 1 : 1;
-  data.last = msg;
+  data.count = data.last === content ? data.count + 1 : 1;
+  data.last = content;
   data.time = now;
 
   spamMap.set(id, data);
@@ -78,178 +78,140 @@ function isSpam(id, msg) {
   return data.count >= 5;
 }
 
-// ================= SAFE DESCRIPTION HELPER =================
-const desc = (text) => typeof text === "string" ? text : "No description";
+// ================= SAFE DESC =================
+const d = (x) => typeof x === "string" ? x : "No description";
 
-// ================= COMMANDS (FIXED ALL CRASHES) =================
+// ================= COMMANDS =================
 const commands = [
 
-  new SlashCommandBuilder()
-    .setName("ping")
-    .setDescription(desc("Ping command")),
+new SlashCommandBuilder()
+.setName("ping")
+.setDescription(d("Ping command")),
 
-  new SlashCommandBuilder()
-    .setName("announce")
-    .setDescription(desc("Send announcement"))
-    .addStringOption(o =>
-      o.setName("message")
-        .setDescription("Message")
-        .setRequired(true))
-    .addChannelOption(o =>
-      o.setName("channel")
-        .setDescription("Channel")
-        .addChannelTypes(ChannelType.GuildText))
-    .addStringOption(o =>
-      o.setName("image")
-        .setDescription("Image URL")),
+new SlashCommandBuilder()
+.setName("announce")
+.setDescription(d("Send announcement"))
+.addStringOption(o =>
+  o.setName("message").setDescription("Message").setRequired(true))
+.addChannelOption(o =>
+  o.setName("channel").setDescription("Channel").addChannelTypes(ChannelType.GuildText))
+.addStringOption(o =>
+  o.setName("image").setDescription("Image URL")),
 
-  new SlashCommandBuilder()
-    .setName("serverinfo")
-    .setDescription(desc("Show server info")),
+new SlashCommandBuilder()
+.setName("serverinfo")
+.setDescription(d("Show server info")),
 
-  new SlashCommandBuilder()
-    .setName("warn")
-    .setDescription(desc("Warn user"))
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("Target user")
-        .setRequired(true))
-    .addStringOption(o =>
-      o.setName("reason")
-        .setDescription("Reason")
-        .setRequired(true)),
+new SlashCommandBuilder()
+.setName("warn")
+.setDescription(d("Warn user"))
+.addUserOption(o =>
+  o.setName("user").setDescription("User").setRequired(true))
+.addStringOption(o =>
+  o.setName("reason").setDescription("Reason").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("unwarn")
-    .setDescription(desc("Remove warn"))
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("Target user")
-        .setRequired(true)),
+new SlashCommandBuilder()
+.setName("unwarn")
+.setDescription(d("Remove warn"))
+.addUserOption(o =>
+  o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("clearwarn")
-    .setDescription(desc("Clear warns"))
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("Target user")
-        .setRequired(true)),
+new SlashCommandBuilder()
+.setName("clearwarn")
+.setDescription(d("Clear warns"))
+.addUserOption(o =>
+  o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("warnlist")
-    .setDescription(desc("Show warned users")),
+new SlashCommandBuilder()
+.setName("warnlist")
+.setDescription(d("Show warn list")),
 
-  new SlashCommandBuilder()
-    .setName("warninfo")
-    .setDescription(desc("Show warn history"))
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("Target user")
-        .setRequired(true)),
+new SlashCommandBuilder()
+.setName("warninfo")
+.setDescription(d("Warn history"))
+.addUserOption(o =>
+  o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("kick")
-    .setDescription(desc("Kick user"))
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("Target user")
-        .setRequired(true))
-    .addStringOption(o =>
-      o.setName("reason")
-        .setDescription("Reason")
-        .setRequired(true)),
+new SlashCommandBuilder()
+.setName("kick")
+.setDescription(d("Kick user"))
+.addUserOption(o =>
+  o.setName("user").setDescription("User").setRequired(true))
+.addStringOption(o =>
+  o.setName("reason").setDescription("Reason").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("ban")
-    .setDescription(desc("Ban user"))
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("Target user")
-        .setRequired(true))
-    .addStringOption(o =>
-      o.setName("reason")
-        .setDescription("Reason")
-        .setRequired(true)),
+new SlashCommandBuilder()
+.setName("ban")
+.setDescription(d("Ban user"))
+.addUserOption(o =>
+  o.setName("user").setDescription("User").setRequired(true))
+.addStringOption(o =>
+  o.setName("reason").setDescription("Reason").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("timeout")
-    .setDescription(desc("Timeout user"))
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("Target user")
-        .setRequired(true))
-    .addIntegerOption(o =>
-      o.setName("duration")
-        .setDescription("Minutes")
-        .setRequired(true))
-    .addStringOption(o =>
-      o.setName("reason")
-        .setDescription("Reason")
-        .setRequired(true)),
+new SlashCommandBuilder()
+.setName("timeout")
+.setDescription(d("Timeout user"))
+.addUserOption(o =>
+  o.setName("user").setDescription("User").setRequired(true))
+.addIntegerOption(o =>
+  o.setName("duration").setDescription("Minutes").setRequired(true))
+.addStringOption(o =>
+  o.setName("reason").setDescription("Reason").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("untimeout")
-    .setDescription(desc("Remove timeout"))
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("Target user")
-        .setRequired(true)),
+new SlashCommandBuilder()
+.setName("untimeout")
+.setDescription(d("Remove timeout"))
+.addUserOption(o =>
+  o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("purge")
-    .setDescription(desc("Delete messages"))
-    .addIntegerOption(o =>
-      o.setName("amount")
-        .setDescription("Amount")
-        .setRequired(true)),
+new SlashCommandBuilder()
+.setName("purge")
+.setDescription(d("Delete messages"))
+.addIntegerOption(o =>
+  o.setName("amount").setDescription("Amount").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("addrole")
-    .setDescription(desc("Add role"))
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("Target user")
-        .setRequired(true)),
+new SlashCommandBuilder()
+.setName("addrole")
+.setDescription(d("Add role"))
+.addUserOption(o =>
+  o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("removerole")
-    .setDescription(desc("Remove role"))
-    .addUserOption(o =>
-      o.setName("user")
-        .setDescription("Target user")
-        .setRequired(true))
+new SlashCommandBuilder()
+.setName("removerole")
+.setDescription(d("Remove role"))
+.addUserOption(o =>
+  o.setName("user").setDescription("User").setRequired(true))
 
 ].map(c => c.toJSON());
 
-// ================= READY =================
+// ================= READY (FIXED SLASH REGISTRATION) =================
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
+  try {
+    const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
-  await rest.put(
-    Routes.applicationCommands(client.user.id),
-    { body: commands }
-  );
+    console.log("⏳ Syncing slash commands...");
 
-  console.log("🚀 Commands Registered");
+    await rest.put(
+      Routes.applicationCommands(client.user.id),
+      { body: commands }
+    );
+
+    console.log("🚀 Slash commands synced successfully");
+  } catch (err) {
+    console.error("❌ Slash command error:", err);
+  }
 });
 
 // ================= INTERACTIONS =================
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  let replied = false;
-
-  const safe = (msg) => {
-    replied = true;
-    return interaction.editReply(msg);
-  };
+  await interaction.deferReply();
 
   try {
     const cmd = interaction.commandName;
-
-    await interaction.deferReply();
 
     const user = interaction.options.getUser("user");
     const member = user
@@ -258,33 +220,24 @@ client.on("interactionCreate", async (interaction) => {
 
     // ================= SERVER INFO =================
     if (cmd === "serverinfo") {
-      return safe({
+      return interaction.editReply({
         embeds: [
           new EmbedBuilder()
             .setTitle("🌆 City Role Play")
-            .setImage("https://i.imgur.com/JeZR5OO.jpg")
             .setColor("Blue")
+            .setImage("https://i.imgur.com/JeZR5OO.jpg")
             .setDescription(`👋 Welcome to City Role Play!
 
-Hey there! We're glad to have you join our city 🌆
-This server is all about creating your own story and living your role.
+🎭 Choose roles like Police, Criminal, Business Owner
 
-🎭 Pick Your Role
-Citizen, Police, Criminal, Business Owner
+📜 Follow rules
 
-📜 Rules First
-Follow RP rules
-
-🚀 Get Started
-Start your journey
-
-💬 Need Help?
-Staff is here`)
+🚀 Enjoy RP experience`)
         ]
       });
     }
 
-    // ================= WARN FIXED (24H AFTER 3) =================
+    // ================= WARN SYSTEM =================
     if (cmd === "warn") {
       const reason = interaction.options.getString("reason");
 
@@ -303,31 +256,24 @@ Staff is here`)
       }
 
       await data.save();
-      return safe("Warn added");
+      return interaction.editReply("Warn added");
     }
 
     if (cmd === "warnlist") {
       const all = await Warn.find({ warns: { $gt: 0 } });
-      return safe(all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n") || "No warns");
+      return interaction.editReply(all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n") || "No warns");
     }
 
     if (cmd === "warninfo") {
       const data = await Warn.findOne({ userId: member.id });
-      if (!data) return safe("No history");
+      if (!data) return interaction.editReply("No history");
 
-      return safe(data.history.map((h, i) => `${i + 1}. ${h.reason}`).join("\n"));
+      return interaction.editReply(data.history.map((h, i) => `${i + 1}. ${h.reason}`).join("\n"));
     }
 
   } catch (err) {
     console.error(err);
-
-    if (!replied) {
-      try {
-        return interaction.editReply("❌ Error occurred");
-      } catch {
-        return interaction.followUp({ content: "❌ Error", ephemeral: true });
-      }
-    }
+    return interaction.editReply("❌ Error occurred");
   }
 });
 
@@ -335,7 +281,7 @@ Staff is here`)
 client.on("messageCreate", (msg) => {
   if (msg.author.bot) return;
 
-  if (isSpam(msg.author.id, msg.content)) {
+  if (antiSpam(msg.author.id, msg.content)) {
     msg.delete().catch(() => {});
     return msg.channel.send(`⚠️ Stop spamming ${msg.author}`);
   }
