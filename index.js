@@ -1,7 +1,3 @@
-// =====================================================
-//                CRP DISCORD BOT (STABLE)
-// =====================================================
-
 const express = require("express");
 const mongoose = require("mongoose");
 const OpenAI = require("openai");
@@ -18,7 +14,7 @@ const {
 
 console.log("🔥 BOT STARTING...");
 
-// ================= ENV =================
+// ================= ENV CHECK =================
 if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing TOKEN");
 if (!process.env.MONGO_URI) throw new Error("Missing MONGO");
 
@@ -27,7 +23,7 @@ const app = express();
 app.get("/", (req, res) => res.send("Alive"));
 app.listen(3000);
 
-// ================= DB =================
+// ================= MONGO =================
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ Mongo Connected"))
   .catch(console.error);
@@ -61,12 +57,10 @@ const allowedUsers = [
   "1420063137838923868"
 ];
 
-const purgeRoleId = "1390273593040048220";
-
-// ================= ANTI-SPAM =================
+// ================= ANTI SPAM =================
 const spamMap = new Map();
 
-function isSpam(id, content) {
+function antiSpam(id, content) {
   const now = Date.now();
 
   if (!spamMap.has(id)) {
@@ -90,7 +84,7 @@ function isSpam(id, content) {
   return data.count >= 5;
 }
 
-// ================= COMMANDS =================
+// ================= COMMANDS (ALL KEPT) =================
 const commands = [
 
   new SlashCommandBuilder().setName("ping").setDescription("Ping command"),
@@ -166,7 +160,7 @@ const commands = [
 
 ].map(c => c.toJSON());
 
-// ================= READY EVENT =================
+// ================= READY =================
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
@@ -180,24 +174,32 @@ client.once("ready", async () => {
   console.log("🚀 Commands Registered");
 });
 
-// ================= INTERACTIONS =================
+// ================= INTERACTIONS (FIXED SAFE FLOW) =================
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
+  let replied = false;
+
   try {
     const cmd = interaction.commandName;
+
     const publicCmds = ["serverinfo", "warnlist", "warninfo"];
 
     await interaction.deferReply({ ephemeral: !publicCmds.includes(cmd) });
+
+    const safeReply = (data) => {
+      replied = true;
+      return interaction.editReply(data);
+    };
 
     const user = interaction.options.getUser("user");
     const member = user
       ? await interaction.guild.members.fetch(user.id).catch(() => null)
       : null;
 
-    // ================= SERVER INFO (YOUR FULL ORIGINAL) =================
+    // ================= SERVER INFO (YOUR ORIGINAL) =================
     if (cmd === "serverinfo") {
-      return interaction.editReply({
+      return safeReply({
         embeds: [
           new EmbedBuilder()
             .setTitle("🌆 City Role Play")
@@ -212,13 +214,13 @@ This server is all about creating your own story and living your role.
 Choose a role that fits your character—citizen, police, criminal, business owner, or anything in between!
 
 📜 Rules First
-Before you start, make sure to read the rules carefully to keep the roleplay fun and fair for everyone.
+Before you start, make sure to read the rules carefully.
 
 🚀 Get Started
-Head over to the role selection channel and begin your journey in the city!
+Head over to role selection channel.
 
 💬 Need Help?
-Feel free to ask our team or other members—we’re here to help.
+We’re here to help.
 
 Enjoy Playing City Role Play 🎉`)
         ]
@@ -245,25 +247,30 @@ Enjoy Playing City Role Play 🎉`)
       }
 
       await data.save();
-      return interaction.editReply("Warn added");
+      return safeReply("Warn added");
     }
 
     if (cmd === "warnlist") {
       const all = await Warn.find({ warns: { $gt: 0 } });
-      return interaction.editReply(all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n") || "No warns");
+      return safeReply(all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n") || "No warns");
     }
 
     if (cmd === "warninfo") {
       const data = await Warn.findOne({ userId: member.id });
-      if (!data) return interaction.editReply("No history");
+      if (!data) return safeReply("No history");
 
-      return interaction.editReply(data.history.map((h, i) => `${i + 1}. ${h.reason}`).join("\n"));
+      return safeReply(data.history.map((h, i) => `${i + 1}. ${h.reason}`).join("\n"));
     }
 
   } catch (err) {
-    console.error(err);
-    if (interaction.deferred) {
-      return interaction.editReply("❌ Error occurred");
+    console.error("ERROR:", err);
+
+    if (!replied) {
+      try {
+        return interaction.editReply("❌ Error occurred");
+      } catch {
+        return interaction.followUp({ content: "❌ Critical error", ephemeral: true });
+      }
     }
   }
 });
@@ -272,7 +279,7 @@ Enjoy Playing City Role Play 🎉`)
 client.on("messageCreate", (msg) => {
   if (msg.author.bot) return;
 
-  if (isSpam(msg.author.id, msg.content)) {
+  if (antiSpam(msg.author.id, msg.content)) {
     msg.delete().catch(() => {});
     return msg.channel.send(`⚠️ Stop spamming ${msg.author}`);
   }
