@@ -65,90 +65,90 @@ const purgeRoleId = "1390273593040048220";
 // ===== COMMANDS =====
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Ping"),
+  new SlashCommandBuilder().setName("ping").setDescription("Ping command"),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o => o.setName("message").setDescription("Text").setRequired(true))
-    .addChannelOption(o =>
-      o.setName("channel").setDescription("Optional channel")
-        .addChannelTypes(ChannelType.GuildText))
+    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
+    .addChannelOption(o => o.setName("channel").setDescription("Optional channel").addChannelTypes(ChannelType.GuildText))
     .addStringOption(o => o.setName("image").setDescription("Image URL")),
 
-  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
+  new SlashCommandBuilder()
+    .setName("serverinfo")
+    .setDescription("Show server info"),
 
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("unwarn")
     .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("clearwarn")
     .setDescription("Clear all warns")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true)),
 
-  new SlashCommandBuilder().setName("warnlist").setDescription("Show warns"),
+  new SlashCommandBuilder().setName("warnlist").setDescription("Show warned users"),
 
   new SlashCommandBuilder()
     .setName("warninfo")
-    .setDescription("Warn history")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .setDescription("Show warn history")
+    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
     .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addIntegerOption(o => o.setName("duration").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true))
+    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("untimeout")
     .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setRequired(true)),
+    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("addrole")
-    .setDescription("Add roles")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setRequired(true))
-    .addRoleOption(o => o.setName("role2"))
-    .addRoleOption(o => o.setName("role3"))
-    .addRoleOption(o => o.setName("role4"))
-    .addRoleOption(o => o.setName("role5")),
+    .setDescription("Add multiple roles")
+    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true))
+    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
+    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
+    .addRoleOption(o => o.setName("role3").setDescription("Role 3"))
+    .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
+    .addRoleOption(o => o.setName("role5").setDescription("Role 5")),
 
   new SlashCommandBuilder()
     .setName("removerole")
-    .setDescription("Remove roles")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setRequired(true))
-    .addRoleOption(o => o.setName("role2"))
-    .addRoleOption(o => o.setName("role3"))
-    .addRoleOption(o => o.setName("role4"))
-    .addRoleOption(o => o.setName("role5"))
+    .setDescription("Remove multiple roles")
+    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true))
+    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
+    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
+    .addRoleOption(o => o.setName("role3").setDescription("Role 3"))
+    .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
+    .addRoleOption(o => o.setName("role5").setDescription("Role 5"))
 
 ].map(c => c.toJSON());
 
@@ -162,10 +162,9 @@ client.once("clientReady", async () => {
   console.log("✅ Commands registered");
 });
 
-// ===== BUTTON (DISMISS) =====
+// ===== BUTTON =====
 client.on("interactionCreate", async (i) => {
   if (!i.isButton()) return;
-
   if (i.customId === "dismiss") {
     return i.update({ content: "✅ Closed", components: [] });
   }
@@ -176,7 +175,6 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   const cmd = interaction.commandName;
-
   const publicCmds = ["serverinfo","warnlist","warninfo"];
 
   await interaction.deferReply({ ephemeral: !publicCmds.includes(cmd) });
@@ -186,11 +184,9 @@ client.on("interactionCreate", async (interaction) => {
     const hasRole = interaction.member.roles.cache.has(purgeRoleId);
 
     const user = interaction.options.getUser("user");
-    const member = user
-      ? await interaction.guild.members.fetch(user.id).catch(()=>null)
-      : null;
+    const member = user ? await interaction.guild.members.fetch(user.id).catch(()=>null) : null;
 
-    // ===== PERMISSION =====
+    // PERMISSIONS
     if (!["ping","serverinfo","warnlist","warninfo"].includes(cmd)) {
       if (cmd === "purge") {
         if (!allowed && !hasRole) return interaction.editReply("❌ No permission");
@@ -199,10 +195,9 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
-    // ===== PING =====
     if (cmd === "ping") return interaction.editReply("🏓 Pong!");
 
-    // ===== SERVER INFO =====
+    // ===== SERVER INFO (PUBLIC) =====
     if (cmd === "serverinfo") {
       const embed = new EmbedBuilder()
         .setTitle("🌆 City Role Play")
@@ -230,14 +225,10 @@ client.on("interactionCreate", async (interaction) => {
       else
         await channel.send(msg);
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("dismiss").setLabel("Dismiss").setStyle(ButtonStyle.Secondary)
-      );
-
-      return interaction.editReply({ content: "📤 Sent", components: [row] });
+      return interaction.editReply("📤 Announcement sent");
     }
 
-    // ===== WARN =====
+    // ===== WARN SYSTEM =====
     if (cmd === "warn") {
       const reason = interaction.options.getString("reason");
 
@@ -248,31 +239,29 @@ client.on("interactionCreate", async (interaction) => {
 
       if (data.warns >= 3) {
         await member.timeout(86400000, "3 warns");
-        await interaction.channel.send(`🚫 <@${member.id}> timed out (3/3)`);
         data.warns = 0;
         data.history = [];
+        await interaction.channel.send(`🚫 <@${member.id}> timed out (3/3)`);
       } else {
         await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)\nReason: ${reason}`);
       }
 
       await data.save();
+      await member.send(`⚠️ You were warned\nReason: ${reason}`).catch(()=>{});
 
-      await member.send(`⚠️ Warn\nReason: ${reason}`).catch(()=>{});
       return interaction.editReply("Warn added");
     }
 
     if (cmd === "warnlist") {
       const all = await Warn.find({ warns: { $gt: 0 } });
-      return interaction.editReply(all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n") || "No warns");
+      return interaction.editReply(all.map(w=>`<@${w.userId}> → ${w.warns}/3`).join("\n") || "No warns");
     }
 
     if (cmd === "warninfo") {
       const data = await Warn.findOne({ userId: member.id });
       if (!data) return interaction.editReply("No history");
 
-      return interaction.editReply(
-        data.history.map((h,i)=>`${i+1}. ${h.reason} (${h.date})`).join("\n")
-      );
+      return interaction.editReply(data.history.map((h,i)=>`${i+1}. ${h.reason} (${h.date})`).join("\n"));
     }
 
     if (cmd === "unwarn") {
@@ -293,53 +282,6 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply("All warnings removed");
     }
 
-    // ===== MODERATION =====
-    if (cmd === "kick") {
-      await member.kick();
-      await interaction.channel.send(`👢 <@${member.id}> kicked`);
-      return interaction.editReply("Done");
-    }
-
-    if (cmd === "ban") {
-      await member.ban();
-      await interaction.channel.send(`🔨 <@${member.id}> banned`);
-      return interaction.editReply("Done");
-    }
-
-    if (cmd === "timeout") {
-      const d = interaction.options.getInteger("duration");
-      await member.timeout(d * 60000);
-      await interaction.channel.send(`⏱️ <@${member.id}> timeout ${d} min`);
-      return interaction.editReply("Done");
-    }
-
-    if (cmd === "untimeout") {
-      await member.timeout(null);
-      return interaction.editReply("Removed");
-    }
-
-    if (cmd === "purge") {
-      const amount = interaction.options.getInteger("amount");
-      await interaction.channel.bulkDelete(amount, true);
-      return interaction.editReply(`Deleted ${amount}`);
-    }
-
-    if (cmd === "addrole") {
-      const roles = ["role1","role2","role3","role4","role5"]
-        .map(r=>interaction.options.getRole(r)).filter(Boolean);
-
-      for (const r of roles) await member.roles.add(r);
-      return interaction.editReply("Roles added");
-    }
-
-    if (cmd === "removerole") {
-      const roles = ["role1","role2","role3","role4","role5"]
-        .map(r=>interaction.options.getRole(r)).filter(Boolean);
-
-      for (const r of roles) await member.roles.remove(r);
-      return interaction.editReply("Roles removed");
-    }
-
   } catch (err) {
     console.error(err);
     return interaction.editReply("❌ Error");
@@ -349,8 +291,7 @@ client.on("interactionCreate", async (interaction) => {
 // ===== GREETING =====
 client.on("messageCreate", (msg) => {
   if (msg.author.bot) return;
-  const t = msg.content.toLowerCase();
-  if (["hi","hello","hey"].includes(t)) {
+  if (["hi","hello","hey"].includes(msg.content.toLowerCase())) {
     msg.reply(`👋 Greetings, ${msg.author.username}! Welcome to CRP 🌆`);
   }
 });
