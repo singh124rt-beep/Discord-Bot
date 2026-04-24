@@ -7,7 +7,11 @@ const {
   REST,
   Routes,
   SlashCommandBuilder,
-  ChannelType
+  ChannelType,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder
 } = require("discord.js");
 
 console.log("🔥 BOT STARTING...");
@@ -16,7 +20,7 @@ console.log("🔥 BOT STARTING...");
 if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing TOKEN");
 if (!process.env.MONGO_URI) throw new Error("Missing MONGO");
 
-// ===== EXPRESS =====
+// ===== SERVER =====
 const app = express();
 app.get("/", (req, res) => res.send("Alive"));
 app.listen(3000);
@@ -37,7 +41,9 @@ const Warn = mongoose.model("Warn", new mongoose.Schema({
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
   ]
 });
 
@@ -50,25 +56,21 @@ const allowedUsers = [
 
 const purgeRoleId = "1390273593040048220";
 
-// =====================================================
-// COMMANDS
-// =====================================================
+// ===== COMMANDS =====
 const commands = [
 
   new SlashCommandBuilder().setName("ping").setDescription("Ping"),
-
-  new SlashCommandBuilder()
-    .setName("serverinfo")
-    .setDescription("View server information"),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
     .addStringOption(o => o.setName("message").setDescription("Text").setRequired(true))
     .addChannelOption(o =>
-      o.setName("channel").setDescription("Channel (optional)")
+      o.setName("channel").setDescription("Channel").setRequired(false)
         .addChannelTypes(ChannelType.GuildText))
     .addStringOption(o => o.setName("image").setDescription("Image URL")),
+
+  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
 
   new SlashCommandBuilder()
     .setName("warn")
@@ -86,10 +88,7 @@ const commands = [
     .setDescription("Clear all warns")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("warnlist")
-    .setDescription("Show all warned users"),
-
+  new SlashCommandBuilder().setName("warnlist").setDescription("All warns"),
   new SlashCommandBuilder()
     .setName("warninfo")
     .setDescription("Warn history")
@@ -97,19 +96,19 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("kick")
-    .setDescription("Kick user")
+    .setDescription("Kick")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
-    .setDescription("Ban user")
+    .setDescription("Ban")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
-    .setDescription("Timeout user")
+    .setDescription("Timeout")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
@@ -149,22 +148,24 @@ const commands = [
 // ===== READY =====
 client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-
-  const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
-  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-
-  console.log("✅ Commands registered");
+  await new REST({ version: "10" })
+    .setToken(process.env.DISCORD_BOT_TOKEN)
+    .put(Routes.applicationCommands(client.user.id), { body: commands });
 });
 
-// ===== HANDLER =====
+// ===== BUTTON =====
+client.on("interactionCreate", async (i) => {
+  if (!i.isButton()) return;
+  if (i.customId === "dismiss") {
+    return i.update({ content: "✅ Closed", components: [] });
+  }
+});
+
+// ===== MAIN HANDLER =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.commandName === "serverinfo") {
-    await interaction.deferReply(); // PUBLIC
-  } else {
-    await interaction.deferReply({ ephemeral: true }); // PRIVATE
-  }
+  await interaction.deferReply({ ephemeral: true });
 
   try {
     const cmd = interaction.commandName;
@@ -172,12 +173,11 @@ client.on("interactionCreate", async (interaction) => {
     const hasRole = interaction.member.roles.cache.has(purgeRoleId);
 
     const user = interaction.options.getUser("user");
-    const member = user ? await interaction.guild.members.fetch(user.id).catch(() => null) : null;
+    const member = user ? await interaction.guild.members.fetch(user.id).catch(()=>null) : null;
 
     if (user && !member)
       return interaction.editReply("❌ User not found");
 
-    // PERMISSIONS
     if (!["ping","warnlist","warninfo","serverinfo"].includes(cmd)) {
       if (cmd === "purge") {
         if (!allowed && !hasRole)
@@ -187,26 +187,32 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
-    // ===== SERVERINFO =====
+    // ===== SERVER INFO =====
     if (cmd === "serverinfo") {
-      return interaction.editReply({
-        embeds: [{
-          color: 0x2b2d31,
-          title: "👋 Welcome to City Role Play!",
-          description: "We're glad to have you join our city 🌆\nThis server is all about creating your own story and living your role.",
-          image: {
-            url: "https://i.imgur.com/JeZR5OO.jpg"
-          },
-          fields: [
-            { name: "🎭 Pick Your Role", value: "Citizen, Police, Criminal, Business Owner, Airforce and more." },
-            { name: "📜 Rules First", value: "Read rules to keep RP fair and fun." },
-            { name: "🚀 Get Started", value: "Go to role channel and begin your journey." },
-            { name: "💬 Need Help?", value: "Ask staff anytime." }
-          ],
-          footer: { text: "Enjoy Playing City Role Play 🎉" },
-          timestamp: new Date()
-        }]
-      });
+      const embed = new EmbedBuilder()
+        .setColor(0x2b2d31)
+        .setImage("https://i.imgur.com/JeZR5OO.jpg")
+        .setDescription(`
+👋 Welcome to City Role Play!
+
+This server is all about creating your own story and living your role.
+
+🎭 Pick Your Role  
+Choose roles like Police, Civilian, Gang Member, Business Owner, Airforce and more.
+
+📜 Rules First  
+Follow rules for fair and realistic RP.
+
+🚀 Get Started  
+Go to role channel and begin your journey.
+
+💬 Need Help?  
+Ask staff anytime.
+
+Enjoy your stay 🌆
+`);
+
+      return interaction.reply({ embeds: [embed], ephemeral: false });
     }
 
     // ===== ANNOUNCE =====
@@ -232,35 +238,81 @@ client.on("interactionCreate", async (interaction) => {
       data.warns++;
       data.history.push({ reason, date: new Date().toLocaleString() });
 
+      try {
+        await member.send(`⚠️ Warned in ${interaction.guild.name}\nReason: ${reason}\nWarns: ${data.warns}/3`);
+      } catch {}
+
       if (data.warns >= 3) {
         await member.timeout(86400000, "3 warns");
+
+        await interaction.channel.send(`🚫 ${member.user.tag} reached 3 warns → Timeout 24h`);
+
         data.warns = 0;
         data.history = [];
+        await data.save();
+
+        return interaction.editReply("⚠️ Warn added → punished");
       }
 
       await data.save();
+      await interaction.channel.send(`⚠️ ${member.user.tag} warned (${data.warns}/3)\nReason: ${reason}`);
 
-      await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)\nReason: ${reason}`);
-      return interaction.editReply("Done");
+      return interaction.editReply("Warn added");
     }
 
-    if (cmd === "warnlist") {
-      const all = await Warn.find({ warns: { $gt: 0 } });
-      return interaction.editReply(all.map(w=>`<@${w.userId}> → ${w.warns}`).join("\n") || "No warns");
+    // ===== UNWARN =====
+    if (cmd === "unwarn") {
+      let data = await Warn.findOne({ userId: member.id });
+      if (!data || data.warns === 0)
+        return interaction.editReply("No warns");
+
+      data.warns--;
+      data.history.pop();
+      await data.save();
+
+      await interaction.channel.send(`✅ ${member.user.tag} warning removed (${data.warns}/3)`);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("dismiss").setLabel("Dismiss").setStyle(ButtonStyle.Secondary)
+      );
+
+      return interaction.editReply({ content: "Warning Removed", components: [row] });
     }
 
-    if (cmd === "warninfo") {
-      const data = await Warn.findOne({ userId: member.id });
-      if (!data) return interaction.editReply("No history");
-
-      return interaction.editReply(data.history.map((h,i)=>`${i+1}. ${h.reason} (${h.date})`).join("\n"));
-    }
-
+    // ===== CLEAR WARN =====
     if (cmd === "clearwarn") {
       await Warn.deleteOne({ userId: member.id });
-      return interaction.editReply("Cleared");
+
+      await interaction.channel.send(`🧹 ${member.user.tag} warnings cleared (0/3)`);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("dismiss").setLabel("Dismiss").setStyle(ButtonStyle.Secondary)
+      );
+
+      return interaction.editReply({ content: "Warning Removed", components: [row] });
     }
 
+    // ===== WARNLIST =====
+    if (cmd === "warnlist") {
+      const all = await Warn.find({ warns: { $gt: 0 } });
+      return interaction.reply({
+        content: all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n") || "No warns",
+        ephemeral: false
+      });
+    }
+
+    // ===== WARNINFO =====
+    if (cmd === "warninfo") {
+      const data = await Warn.findOne({ userId: member.id });
+      if (!data) return interaction.reply({ content: "No history", ephemeral: false });
+
+      return interaction.reply({
+        content: data.history.map((h,i)=>`${i+1}. ${h.reason} (${h.date})`).join("\n"),
+        ephemeral: false
+      });
+    }
+
+    // ===== OTHER COMMANDS SAME =====
     if (cmd === "ping") return interaction.editReply("🏓 Pong!");
 
   } catch (err) {
