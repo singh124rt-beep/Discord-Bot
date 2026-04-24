@@ -37,9 +37,7 @@ const Warn = mongoose.model("Warn", new mongoose.Schema({
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -60,11 +58,15 @@ const commands = [
   new SlashCommandBuilder().setName("ping").setDescription("Ping"),
 
   new SlashCommandBuilder()
+    .setName("serverinfo")
+    .setDescription("View server information"),
+
+  new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
     .addStringOption(o => o.setName("message").setDescription("Text").setRequired(true))
     .addChannelOption(o =>
-      o.setName("channel").setDescription("Channel").setRequired(true)
+      o.setName("channel").setDescription("Channel (optional)")
         .addChannelTypes(ChannelType.GuildText))
     .addStringOption(o => o.setName("image").setDescription("Image URL")),
 
@@ -86,7 +88,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("warnlist")
-    .setDescription("Show all warns"),
+    .setDescription("Show all warned users"),
 
   new SlashCommandBuilder()
     .setName("warninfo")
@@ -145,7 +147,7 @@ const commands = [
 ].map(c => c.toJSON());
 
 // ===== READY =====
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
@@ -158,7 +160,12 @@ client.once("ready", async () => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  await interaction.deferReply({ ephemeral: true });
+  // ✅ PUBLIC ONLY FOR SERVERINFO
+  if (interaction.commandName === "serverinfo") {
+    await interaction.deferReply(); // PUBLIC
+  } else {
+    await interaction.deferReply({ ephemeral: true }); // PRIVATE
+  }
 
   try {
     const cmd = interaction.commandName;
@@ -169,10 +176,10 @@ client.on("interactionCreate", async (interaction) => {
     const member = user ? await interaction.guild.members.fetch(user.id).catch(() => null) : null;
 
     if (user && !member)
-      return interaction.editReply("❌ User not found in server");
+      return interaction.editReply("❌ User not found");
 
-    // PERMISSIONS
-    if (!["ping","warnlist","warninfo"].includes(cmd)) {
+    // ===== PERMISSIONS =====
+    if (!["ping","warnlist","warninfo","serverinfo"].includes(cmd)) {
       if (cmd === "purge") {
         if (!allowed && !hasRole)
           return interaction.editReply("❌ No permission");
@@ -181,11 +188,29 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
-    if (cmd === "ping") return interaction.editReply("🏓 Pong!");
+    // ===== SERVER INFO (PUBLIC) =====
+    if (cmd === "serverinfo") {
+      return interaction.editReply({
+        embeds: [{
+          color: 0x2b2d31,
+          title: "🏙️ City Roleplay",
+          description: "A realistic and immersive roleplay experience where every player becomes part of a living city.",
+          fields: [
+            { name: "👥 Role System", value: "Police, Airforce, Civilian, Gang Member and more." },
+            { name: "⚖️ Law & Order", value: "Police maintain order while Airforce supports operations." },
+            { name: "📈 Progression", value: "Build reputation and grow your character." },
+            { name: "🎭 Experience", value: "Serious RP and immersive gameplay." }
+          ],
+          footer: { text: "Play smart. Respect others." },
+          timestamp: new Date()
+        }]
+      });
+    }
 
+    // ===== ANNOUNCE =====
     if (cmd === "announce") {
       const msg = interaction.options.getString("message");
-      const channel = interaction.options.getChannel("channel");
+      const channel = interaction.options.getChannel("channel") || interaction.channel;
       const image = interaction.options.getString("image");
 
       if (image)
@@ -193,7 +218,7 @@ client.on("interactionCreate", async (interaction) => {
       else
         await channel.send(msg);
 
-      return interaction.editReply("📢 Sent");
+      return interaction.editReply("📤 Sent");
     }
 
     // ===== WARN =====
@@ -205,113 +230,48 @@ client.on("interactionCreate", async (interaction) => {
       data.warns++;
       data.history.push({ reason, date: new Date().toLocaleString() });
 
-      let msg;
-
       if (data.warns >= 3) {
         await member.timeout(86400000, "3 warns");
-
-        msg = `⚠️ <@${member.id}> has been warned (3/3)
-Reason: ${reason}
-
-🚫 User timed out for 24h`;
-
         data.warns = 0;
         data.history = [];
-      } else {
-        msg = `⚠️ <@${member.id}> has been warned (${data.warns}/3)
-Reason: ${reason}`;
       }
 
       await data.save();
 
-      await member.send(`⚠️ You were warned\nReason: ${reason}\nWarns: ${data.warns}/3`).catch(()=>{});
-      await interaction.channel.send(msg);
-
-      return interaction.editReply("Warn added");
-    }
-
-    if (cmd === "unwarn") {
-      let data = await Warn.findOne({ userId: member.id });
-      if (!data || data.warns === 0)
-        return interaction.editReply("No warns");
-
-      data.warns--;
-      data.history.pop();
-      await data.save();
-
-      await interaction.channel.send(`✅ <@${member.id}> warn removed (${data.warns}/3)`);
+      await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)\nReason: ${reason}`);
       return interaction.editReply("Done");
     }
 
-    if (cmd === "clearwarn") {
-      await Warn.deleteOne({ userId: member.id });
-      return interaction.editReply("Cleared");
-    }
-
-    if (cmd === "warninfo") {
-      const data = await Warn.findOne({ userId: member.id });
-      if (!data) return interaction.editReply("No history");
-
-      return interaction.editReply(data.history.map((h,i)=>`${i+1}. ${h.reason}`).join("\n"));
-    }
-
+    // ===== WARN LIST =====
     if (cmd === "warnlist") {
       const all = await Warn.find({ warns: { $gt: 0 } });
       return interaction.editReply(all.map(w=>`<@${w.userId}> → ${w.warns}`).join("\n") || "No warns");
     }
 
-    if (cmd === "kick") {
-      await member.kick();
-      await interaction.channel.send(`👢 <@${member.id}> kicked`);
-      return interaction.editReply("Done");
+    // ===== WARN INFO =====
+    if (cmd === "warninfo") {
+      const data = await Warn.findOne({ userId: member.id });
+      if (!data) return interaction.editReply("No history");
+
+      return interaction.editReply(
+        data.history.map((h,i)=>`${i+1}. ${h.reason} (${h.date})`).join("\n")
+      );
     }
 
-    if (cmd === "ban") {
-      await member.ban();
-      await interaction.channel.send(`🔨 <@${member.id}> banned`);
-      return interaction.editReply("Done");
+    // ===== CLEAR WARN =====
+    if (cmd === "clearwarn") {
+      await Warn.deleteOne({ userId: member.id });
+      return interaction.editReply("Cleared");
     }
 
-    if (cmd === "timeout") {
-      const d = interaction.options.getInteger("duration");
-      await member.timeout(d * 60000);
-      return interaction.editReply("Timed out");
-    }
-
-    if (cmd === "untimeout") {
-      await member.timeout(null);
-      return interaction.editReply("Removed");
-    }
-
-    if (cmd === "purge") {
-      const amount = interaction.options.getInteger("amount");
-      await interaction.channel.bulkDelete(amount, true);
-      return interaction.editReply(`Deleted ${amount}`);
-    }
-
-    if (cmd === "addrole") {
-      const roles = ["role1","role2","role3","role4","role5"]
-        .map(r=>interaction.options.getRole(r)).filter(Boolean);
-
-      for (const r of roles) await member.roles.add(r);
-      return interaction.editReply("Added");
-    }
-
-    if (cmd === "removerole") {
-      const roles = ["role1","role2","role3","role4","role5"]
-        .map(r=>interaction.options.getRole(r)).filter(Boolean);
-
-      for (const r of roles) await member.roles.remove(r);
-      return interaction.editReply("Removed");
-    }
+    // ===== PING =====
+    if (cmd === "ping") return interaction.editReply("🏓 Pong!");
 
   } catch (err) {
     console.error(err);
-    return interaction.editReply("❌ Error");
+    interaction.editReply("❌ Error");
   }
 });
 
-// LOGIN DEBUG
-client.login(process.env.DISCORD_BOT_TOKEN)
-  .then(() => console.log("✅ Login success"))
-  .catch(err => console.error("❌ Login failed:", err));
+// ===== LOGIN =====
+client.login(process.env.DISCORD_BOT_TOKEN);
