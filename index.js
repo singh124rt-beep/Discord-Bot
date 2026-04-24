@@ -160,7 +160,6 @@ client.once("clientReady", async () => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  // ✅ PUBLIC ONLY FOR SERVERINFO
   if (interaction.commandName === "serverinfo") {
     await interaction.deferReply(); // PUBLIC
   } else {
@@ -178,7 +177,7 @@ client.on("interactionCreate", async (interaction) => {
     if (user && !member)
       return interaction.editReply("❌ User not found");
 
-    // ===== PERMISSIONS =====
+    // PERMISSIONS
     if (!["ping","warnlist","warninfo","serverinfo"].includes(cmd)) {
       if (cmd === "purge") {
         if (!allowed && !hasRole)
@@ -188,20 +187,23 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
-    // ===== SERVER INFO (PUBLIC) =====
+    // ===== SERVERINFO =====
     if (cmd === "serverinfo") {
       return interaction.editReply({
         embeds: [{
           color: 0x2b2d31,
-          title: "🏙️ City Roleplay",
-          description: "A realistic and immersive roleplay experience where every player becomes part of a living city.",
+          title: "👋 Welcome to City Role Play!",
+          description: "We're glad to have you join our city 🌆\nThis server is all about creating your own story and living your role.",
+          image: {
+            url: "https://i.imgur.com/JeZR5OO.jpg"
+          },
           fields: [
-            { name: "👥 Role System", value: "Police, Airforce, Civilian, Gang Member and more." },
-            { name: "⚖️ Law & Order", value: "Police maintain order while Airforce supports operations." },
-            { name: "📈 Progression", value: "Build reputation and grow your character." },
-            { name: "🎭 Experience", value: "Serious RP and immersive gameplay." }
+            { name: "🎭 Pick Your Role", value: "Citizen, Police, Criminal, Business Owner, Airforce and more." },
+            { name: "📜 Rules First", value: "Read rules to keep RP fair and fun." },
+            { name: "🚀 Get Started", value: "Go to role channel and begin your journey." },
+            { name: "💬 Need Help?", value: "Ask staff anytime." }
           ],
-          footer: { text: "Play smart. Respect others." },
+          footer: { text: "Enjoy Playing City Role Play 🎉" },
           timestamp: new Date()
         }]
       });
@@ -242,29 +244,23 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply("Done");
     }
 
-    // ===== WARN LIST =====
     if (cmd === "warnlist") {
       const all = await Warn.find({ warns: { $gt: 0 } });
       return interaction.editReply(all.map(w=>`<@${w.userId}> → ${w.warns}`).join("\n") || "No warns");
     }
 
-    // ===== WARN INFO =====
     if (cmd === "warninfo") {
       const data = await Warn.findOne({ userId: member.id });
       if (!data) return interaction.editReply("No history");
 
-      return interaction.editReply(
-        data.history.map((h,i)=>`${i+1}. ${h.reason} (${h.date})`).join("\n")
-      );
+      return interaction.editReply(data.history.map((h,i)=>`${i+1}. ${h.reason} (${h.date})`).join("\n"));
     }
 
-    // ===== CLEAR WARN =====
     if (cmd === "clearwarn") {
       await Warn.deleteOne({ userId: member.id });
       return interaction.editReply("Cleared");
     }
 
-    // ===== PING =====
     if (cmd === "ping") return interaction.editReply("🏓 Pong!");
 
   } catch (err) {
@@ -273,5 +269,4 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ===== LOGIN =====
 client.login(process.env.DISCORD_BOT_TOKEN);
