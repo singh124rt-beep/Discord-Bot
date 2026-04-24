@@ -14,9 +14,9 @@ const {
 
 console.log("🔥 BOT STARTING...");
 
-// ================= ENV =================
-if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing TOKEN");
-if (!process.env.MONGO_URI) throw new Error("Missing MONGO");
+// ================= ENV CHECK =================
+if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing DISCORD_BOT_TOKEN");
+if (!process.env.MONGO_URI) throw new Error("Missing MONGO_URI");
 
 // ================= EXPRESS =================
 const app = express();
@@ -58,14 +58,14 @@ const allowedUsers = [
 ];
 
 // ================= ANTI SPAM =================
-const spam = new Map();
+const spamMap = new Map();
 
 function isSpam(id, msg) {
   const now = Date.now();
-  const data = spam.get(id) || { count: 0, last: "", time: now };
+  const data = spamMap.get(id) || { count: 0, last: "", time: now };
 
   if (now - data.time > 4000) {
-    spam.set(id, { count: 1, last: msg, time: now });
+    spamMap.set(id, { count: 1, last: msg, time: now });
     return false;
   }
 
@@ -73,74 +73,151 @@ function isSpam(id, msg) {
   data.last = msg;
   data.time = now;
 
-  spam.set(id, data);
+  spamMap.set(id, data);
 
   return data.count >= 5;
 }
 
-// ================= COMMANDS (YOUR OLD ONES KEPT) =================
+// ================= SAFE DESCRIPTION HELPER =================
+const desc = (text) => typeof text === "string" ? text : "No description";
+
+// ================= COMMANDS (FIXED ALL CRASHES) =================
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Ping command"),
+  new SlashCommandBuilder()
+    .setName("ping")
+    .setDescription(desc("Ping command")),
 
   new SlashCommandBuilder()
     .setName("announce")
-    .setDescription("Send announcement")
-    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").setDescription("Channel").addChannelTypes(ChannelType.GuildText))
-    .addStringOption(o => o.setName("image").setDescription("Image URL")),
+    .setDescription(desc("Send announcement"))
+    .addStringOption(o =>
+      o.setName("message")
+        .setDescription("Message")
+        .setRequired(true))
+    .addChannelOption(o =>
+      o.setName("channel")
+        .setDescription("Channel")
+        .addChannelTypes(ChannelType.GuildText))
+    .addStringOption(o =>
+      o.setName("image")
+        .setDescription("Image URL")),
 
   new SlashCommandBuilder()
     .setName("serverinfo")
-    .setDescription("Show server info"),
+    .setDescription(desc("Show server info")),
 
   new SlashCommandBuilder()
     .setName("warn")
-    .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .setDescription(desc("Warn user"))
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("Target user")
+        .setRequired(true))
+    .addStringOption(o =>
+      o.setName("reason")
+        .setDescription("Reason")
+        .setRequired(true)),
 
-  new SlashCommandBuilder().setName("unwarn").setDescription("Remove warn"),
-  new SlashCommandBuilder().setName("clearwarn").setDescription("Clear warns"),
-  new SlashCommandBuilder().setName("warnlist").setDescription("Warn list"),
+  new SlashCommandBuilder()
+    .setName("unwarn")
+    .setDescription(desc("Remove warn"))
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("Target user")
+        .setRequired(true)),
 
-  new SlashCommandBuilder().setName("warninfo").setDescription("Warn history"),
+  new SlashCommandBuilder()
+    .setName("clearwarn")
+    .setDescription(desc("Clear warns"))
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("Target user")
+        .setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("warnlist")
+    .setDescription(desc("Show warned users")),
+
+  new SlashCommandBuilder()
+    .setName("warninfo")
+    .setDescription(desc("Show warn history"))
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("Target user")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
-    .setDescription("Kick user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .setDescription(desc("Kick user"))
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("Target user")
+        .setRequired(true))
+    .addStringOption(o =>
+      o.setName("reason")
+        .setDescription("Reason")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
-    .setDescription("Ban user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .setDescription(desc("Ban user"))
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("Target user")
+        .setRequired(true))
+    .addStringOption(o =>
+      o.setName("reason")
+        .setDescription("Reason")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
-    .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addIntegerOption(o => o.setName("duration").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .setDescription(desc("Timeout user"))
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("Target user")
+        .setRequired(true))
+    .addIntegerOption(o =>
+      o.setName("duration")
+        .setDescription("Minutes")
+        .setRequired(true))
+    .addStringOption(o =>
+      o.setName("reason")
+        .setDescription("Reason")
+        .setRequired(true)),
 
-  new SlashCommandBuilder().setName("untimeout").setDescription("Remove timeout"),
+  new SlashCommandBuilder()
+    .setName("untimeout")
+    .setDescription(desc("Remove timeout"))
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("Target user")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
-    .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setRequired(true)),
+    .setDescription(desc("Delete messages"))
+    .addIntegerOption(o =>
+      o.setName("amount")
+        .setDescription("Amount")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("addrole")
-    .setDescription("Add role")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .setDescription(desc("Add role"))
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("Target user")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("removerole")
-    .setDescription("Remove role")
-    .addUserOption(o => o.setName("user").setRequired(true))
+    .setDescription(desc("Remove role"))
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("Target user")
+        .setRequired(true))
 
 ].map(c => c.toJSON());
 
@@ -158,15 +235,15 @@ client.once("ready", async () => {
   console.log("🚀 Commands Registered");
 });
 
-// ================= COMMAND HANDLER =================
+// ================= INTERACTIONS =================
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   let replied = false;
 
-  const safe = (data) => {
+  const safe = (msg) => {
     replied = true;
-    return interaction.editReply(data);
+    return interaction.editReply(msg);
   };
 
   try {
@@ -179,7 +256,7 @@ client.on("interactionCreate", async (interaction) => {
       ? await interaction.guild.members.fetch(user.id).catch(() => null)
       : null;
 
-    // ================= SERVERINFO (UNCHANGED) =================
+    // ================= SERVER INFO =================
     if (cmd === "serverinfo") {
       return safe({
         embeds: [
@@ -196,18 +273,18 @@ This server is all about creating your own story and living your role.
 Citizen, Police, Criminal, Business Owner
 
 📜 Rules First
-Read rules before RP
+Follow RP rules
 
 🚀 Get Started
 Start your journey
 
 💬 Need Help?
-Ask staff anytime`)
+Staff is here`)
         ]
       });
     }
 
-    // ================= WARN SYSTEM =================
+    // ================= WARN FIXED (24H AFTER 3) =================
     if (cmd === "warn") {
       const reason = interaction.options.getString("reason");
 
