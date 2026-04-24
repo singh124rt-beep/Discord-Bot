@@ -9,41 +9,38 @@ const {
   Routes,
   SlashCommandBuilder,
   ChannelType,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   EmbedBuilder
 } = require("discord.js");
 
 console.log("🔥 BOT STARTING...");
 
-// ===== ENV =====
+// ================= ENV =================
 if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing TOKEN");
 if (!process.env.MONGO_URI) throw new Error("Missing MONGO");
 
-// ===== EXPRESS =====
+// ================= EXPRESS =================
 const app = express();
 app.get("/", (req, res) => res.send("Alive"));
 app.listen(3000);
 
-// ===== DB =====
+// ================= DB =================
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ Mongo Connected"))
   .catch(console.error);
 
-// ===== AI =====
+// ================= AI =================
 const ai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// ===== WARN MODEL =====
+// ================= WARN MODEL =================
 const Warn = mongoose.model("Warn", new mongoose.Schema({
   userId: String,
   warns: { type: Number, default: 0 },
   history: [{ reason: String, date: String }]
 }));
 
-// ===== CLIENT =====
+// ================= CLIENT =================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -53,7 +50,7 @@ const client = new Client({
   ]
 });
 
-// ===== CONFIG =====
+// ================= CONFIG =================
 const allowedUsers = [
   "1390273593040048220",
   "1448606724100456459",
@@ -62,115 +59,112 @@ const allowedUsers = [
 
 const purgeRoleId = "1390273593040048220";
 
-// ===== COMMANDS =====
+// ================= ANTI-SPAM =================
+const spamMap = new Map();
+
+function checkSpam(msg) {
+  const id = msg.author.id;
+  const now = Date.now();
+
+  if (!spamMap.has(id)) {
+    spamMap.set(id, { count: 1, last: msg.content, time: now });
+    return false;
+  }
+
+  const data = spamMap.get(id);
+
+  if (now - data.time > 3000) {
+    spamMap.set(id, { count: 1, last: msg.content, time: now });
+    return false;
+  }
+
+  if (data.last === msg.content) data.count++;
+  else data.count = 1;
+
+  data.last = msg.content;
+  data.time = now;
+
+  spamMap.set(id, data);
+
+  return data.count >= 5;
+}
+
+// ================= COMMANDS =================
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Ping command"),
+  new SlashCommandBuilder().setName("ping").setDescription("Ping"),
 
-  new SlashCommandBuilder()
-    .setName("announce")
+  new SlashCommandBuilder().setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").setDescription("Optional channel").addChannelTypes(ChannelType.GuildText))
-    .addStringOption(o => o.setName("image").setDescription("Image URL")),
+    .addStringOption(o => o.setName("message").setRequired(true))
+    .addChannelOption(o => o.setName("channel").addChannelTypes(ChannelType.GuildText)),
 
-  new SlashCommandBuilder()
-    .setName("serverinfo")
-    .setDescription("Show server info"),
+  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
 
-  new SlashCommandBuilder()
-    .setName("warn")
+  new SlashCommandBuilder().setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("unwarn")
+  new SlashCommandBuilder().setName("unwarn")
     .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("clearwarn")
-    .setDescription("Clear all warns")
-    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true)),
+  new SlashCommandBuilder().setName("clearwarn")
+    .setDescription("Clear warns")
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
-  new SlashCommandBuilder().setName("warnlist").setDescription("Show warned users"),
+  new SlashCommandBuilder().setName("warnlist").setDescription("Warn list"),
 
-  new SlashCommandBuilder()
-    .setName("warninfo")
-    .setDescription("Show warn history")
-    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true)),
+  new SlashCommandBuilder().setName("warninfo")
+    .setDescription("Warn history")
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("kick")
+  new SlashCommandBuilder().setName("kick")
     .setDescription("Kick user")
-    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("ban")
+  new SlashCommandBuilder().setName("ban")
     .setDescription("Ban user")
-    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("timeout")
+  new SlashCommandBuilder().setName("timeout")
     .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true))
-    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addIntegerOption(o => o.setName("duration").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("untimeout")
+  new SlashCommandBuilder().setName("untimeout")
     .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("purge")
+  new SlashCommandBuilder().setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true)),
+    .addIntegerOption(o => o.setName("amount").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("addrole")
-    .setDescription("Add multiple roles")
-    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
-    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
-    .addRoleOption(o => o.setName("role3").setDescription("Role 3"))
-    .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
-    .addRoleOption(o => o.setName("role5").setDescription("Role 5")),
+  new SlashCommandBuilder().setName("addrole")
+    .setDescription("Add roles")
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("removerole")
-    .setDescription("Remove multiple roles")
-    .addUserOption(o => o.setName("user").setDescription("Target user").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
-    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
-    .addRoleOption(o => o.setName("role3").setDescription("Role 3"))
-    .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
-    .addRoleOption(o => o.setName("role5").setDescription("Role 5"))
+  new SlashCommandBuilder().setName("removerole")
+    .setDescription("Remove roles")
+    .addUserOption(o => o.setName("user").setRequired(true))
 
 ].map(c => c.toJSON());
 
-// ===== READY =====
+// ================= READY =================
 client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 
-  console.log("✅ Commands registered");
+  console.log("🚀 Commands registered");
 });
 
-// ===== BUTTON =====
-client.on("interactionCreate", async (i) => {
-  if (!i.isButton()) return;
-  if (i.customId === "dismiss") {
-    return i.update({ content: "✅ Closed", components: [] });
-  }
-});
-
-// ===== COMMAND HANDLER =====
+// ================= MAIN HANDLER =================
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -180,55 +174,41 @@ client.on("interactionCreate", async (interaction) => {
   await interaction.deferReply({ ephemeral: !publicCmds.includes(cmd) });
 
   try {
-    const allowed = allowedUsers.includes(interaction.user.id);
-    const hasRole = interaction.member.roles.cache.has(purgeRoleId);
 
     const user = interaction.options.getUser("user");
     const member = user ? await interaction.guild.members.fetch(user.id).catch(()=>null) : null;
 
-    // PERMISSIONS
-    if (!["ping","serverinfo","warnlist","warninfo"].includes(cmd)) {
-      if (cmd === "purge") {
-        if (!allowed && !hasRole) return interaction.editReply("❌ No permission");
-      } else if (!allowed) {
-        return interaction.editReply("❌ No permission");
-      }
-    }
-
     if (cmd === "ping") return interaction.editReply("🏓 Pong!");
 
-    // ===== SERVER INFO (PUBLIC) =====
+    // ================= SERVER INFO =================
     if (cmd === "serverinfo") {
       const embed = new EmbedBuilder()
         .setTitle("🌆 City Role Play")
         .setImage("https://i.imgur.com/JeZR5OO.jpg")
         .setDescription(`👋 Welcome to City Role Play!
 
-🎭 Choose roles like Police, Airforce, Criminal, Business Owner.
+Hey there! We're glad to have you join our city 🌆  
+This server is all about creating your own story and living your role.
 
-📜 Follow rules and enjoy realistic RP.
+🎭 Pick Your Role  
+Choose a role that fits your character—citizen, police, criminal, business owner, or anything in between!
 
-🚀 Build your story and grow.`)
+📜 Rules First  
+Before you start, make sure to read the rules carefully to keep the roleplay fun and fair for everyone.
+
+🚀 Get Started  
+Head over to the role selection channel and begin your journey in the city!
+
+💬 Need Help?  
+Feel free to ask our team or other members—we’re here to help.
+
+Enjoy Playing City Role Play 🎉`)
         .setColor("Blue");
 
       return interaction.editReply({ embeds: [embed] });
     }
 
-    // ===== ANNOUNCE =====
-    if (cmd === "announce") {
-      const msg = interaction.options.getString("message");
-      const channel = interaction.options.getChannel("channel") || interaction.channel;
-      const image = interaction.options.getString("image");
-
-      if (image)
-        await channel.send({ content: msg, embeds: [{ image: { url: image } }] });
-      else
-        await channel.send(msg);
-
-      return interaction.editReply("📤 Announcement sent");
-    }
-
-    // ===== WARN SYSTEM =====
+    // ================= WARN SYSTEM =================
     if (cmd === "warn") {
       const reason = interaction.options.getString("reason");
 
@@ -237,31 +217,33 @@ client.on("interactionCreate", async (interaction) => {
       data.warns++;
       data.history.push({ reason, date: new Date().toLocaleString() });
 
+      // 🔥 3 WARN = 24 HOUR TIMEOUT
       if (data.warns >= 3) {
-        await member.timeout(86400000, "3 warns");
+        await member.timeout(24 * 60 * 60 * 1000, "3 warns = 24h timeout");
         data.warns = 0;
         data.history = [];
-        await interaction.channel.send(`🚫 <@${member.id}> timed out (3/3)`);
+
+        await interaction.channel.send(`🚫 <@${member.id}> timed out for 24 hours (3 warns)`);
       } else {
         await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)\nReason: ${reason}`);
       }
 
       await data.save();
-      await member.send(`⚠️ You were warned\nReason: ${reason}`).catch(()=>{});
-
       return interaction.editReply("Warn added");
     }
 
     if (cmd === "warnlist") {
       const all = await Warn.find({ warns: { $gt: 0 } });
-      return interaction.editReply(all.map(w=>`<@${w.userId}> → ${w.warns}/3`).join("\n") || "No warns");
+      return interaction.editReply(all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n") || "No warns");
     }
 
     if (cmd === "warninfo") {
       const data = await Warn.findOne({ userId: member.id });
       if (!data) return interaction.editReply("No history");
 
-      return interaction.editReply(data.history.map((h,i)=>`${i+1}. ${h.reason} (${h.date})`).join("\n"));
+      return interaction.editReply(
+        data.history.map((h,i)=>`${i+1}. ${h.reason} (${h.date})`).join("\n")
+      );
     }
 
     if (cmd === "unwarn") {
@@ -272,14 +254,12 @@ client.on("interactionCreate", async (interaction) => {
       data.history.pop();
       await data.save();
 
-      await interaction.channel.send(`✅ <@${member.id}> warning removed (${data.warns}/3)`);
       return interaction.editReply("Warning removed");
     }
 
     if (cmd === "clearwarn") {
       await Warn.deleteOne({ userId: member.id });
-      await interaction.channel.send(`🧹 <@${member.id}> all warnings cleared`);
-      return interaction.editReply("All warnings removed");
+      return interaction.editReply("All warnings cleared");
     }
 
   } catch (err) {
@@ -288,32 +268,20 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ===== GREETING =====
+// ================= MESSAGE SYSTEM =================
 client.on("messageCreate", (msg) => {
   if (msg.author.bot) return;
+
+  // ANTI-SPAM
+  if (checkSpam(msg)) {
+    msg.delete().catch(()=>{});
+    return msg.channel.send(`⚠️ ${msg.author}, stop spamming!`);
+  }
+
   if (["hi","hello","hey"].includes(msg.content.toLowerCase())) {
-    msg.reply(`👋 Greetings, ${msg.author.username}! Welcome to CRP 🌆`);
+    msg.reply(`👋 Hello ${msg.author.username}! Welcome to CRP 🌆`);
   }
 });
 
-// ===== AI =====
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-  if (!message.mentions.has(client.user)) return;
-
-  try {
-    const prompt = message.content.replace(/<@!?\d+>/g, "").trim();
-
-    const res = await ai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }]
-    });
-
-    message.reply(res.choices[0].message.content.substring(0,2000));
-  } catch {
-    message.reply("⚠️ AI error");
-  }
-});
-
-// ===== LOGIN =====
+// ================= LOGIN =================
 client.login(process.env.DISCORD_BOT_TOKEN);
