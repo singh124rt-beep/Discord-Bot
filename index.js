@@ -1,5 +1,6 @@
 const express = require("express");
 const mongoose = require("mongoose");
+const transcripts = require("discord-html-transcripts");
 
 const {
   Client,
@@ -7,31 +8,35 @@ const {
   REST,
   Routes,
   SlashCommandBuilder,
-  ChannelType,
-  EmbedBuilder
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  PermissionsBitField
 } = require("discord.js");
 
-console.log("🔥 BOT STARTING...");
+// ===== CONFIG =====
+const TOKEN = process.env.DISCORD_BOT_TOKEN;
+const MONGO = process.env.MONGO_URI;
 
-// ===== ENV =====
-if (!process.env.DISCORD_BOT_TOKEN) throw new Error("Missing TOKEN");
-if (!process.env.MONGO_URI) throw new Error("Missing MONGO");
+const STAFF_ROLE = "1390273593040048220";
+const TICKET_CATEGORY = "1404779580283424829";
+const LOG_CHANNEL = "1375845745596305408";
 
 // ===== EXPRESS =====
 const app = express();
-app.get("/", (req, res) => res.send("Alive"));
+app.get("/", (_, res) => res.send("Alive"));
 app.listen(3000);
 
 // ===== DB =====
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ Mongo Connected"))
-  .catch(console.error);
+mongoose.connect(MONGO).then(() => console.log("Mongo Connected"));
 
-// ===== WARN MODEL =====
+// ===== WARN DB =====
 const Warn = mongoose.model("Warn", new mongoose.Schema({
   userId: String,
   warns: { type: Number, default: 0 },
-  history: [{ reason: String, date: String }]
+  history: Array
 }));
 
 // ===== CLIENT =====
@@ -44,321 +49,243 @@ const client = new Client({
   ]
 });
 
-// ===== CONFIG =====
-const allowedUsers = [
-  "1390273593040048220",
-  "1448606724100456459",
-  "1420063137838923868"
-];
-
-// ===== ANTI-SPAM SYSTEM =====
-const spamMap = new Map();
-
-const LIMIT = 5;          // messages
-const TIME = 5000;        // 5 sec
-const MUTE_TIME = 600000; // 10 min
+// ===== ANTI SPAM =====
+const spam = new Map();
 
 client.on("messageCreate", async (msg) => {
   if (msg.author.bot) return;
 
-  const userId = msg.author.id;
+  const data = spam.get(msg.author.id) || { c: 0, t: Date.now() };
 
-  if (!spamMap.has(userId)) {
-    spamMap.set(userId, { count: 1, last: Date.now() });
-  } else {
-    const data = spamMap.get(userId);
-
-    if (Date.now() - data.last < TIME) {
-      data.count++;
-      data.last = Date.now();
-
-      if (data.count >= LIMIT) {
-        try {
-          await msg.member.timeout(MUTE_TIME, "Spam detected");
-
-          msg.channel.send(`🚫 <@${userId}> muted for spamming (10 min)`);
-
-          // add warn also
-          let warnData = await Warn.findOne({ userId }) || new Warn({ userId });
-          warnData.warns++;
-          warnData.history.push({ reason: "Spam", date: new Date().toLocaleString() });
-          await warnData.save();
-
-        } catch {}
-        spamMap.delete(userId);
-      }
-
-    } else {
-      spamMap.set(userId, { count: 1, last: Date.now() });
+  if (Date.now() - data.t < 5000) {
+    data.c++;
+    if (data.c >= 5) {
+      await msg.member.timeout(600000).catch(() => {});
+      msg.channel.send(`🚫 ${msg.author.tag} muted for spam`);
+      spam.delete(msg.author.id);
+      return;
     }
+  } else {
+    spam.set(msg.author.id, { c: 1, t: Date.now() });
   }
 });
 
 // ===== COMMANDS =====
 const commands = [
 
+  // BASIC
   new SlashCommandBuilder().setName("ping").setDescription("Ping"),
+  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
 
-  new SlashCommandBuilder()
-    .setName("serverinfo")
-    .setDescription("Show server info"),
-
+  // ANNOUNCE
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").setDescription("Channel").addChannelTypes(ChannelType.GuildText))
-    .addStringOption(o => o.setName("image").setDescription("Image URL")),
+    .addStringOption(o => o.setName("message").setRequired(true)),
 
+  // TICKET
+  new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
+  new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
+
+  // MODERATION
+  new SlashCommandBuilder()
+    .setName("kick")
+    .setDescription("Kick user")
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("ban")
+    .setDescription("Ban user")
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("timeout")
+    .setDescription("Timeout user")
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addIntegerOption(o => o.setName("time").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("untimeout")
+    .setDescription("Remove timeout")
+    .addUserOption(o => o.setName("user").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("purge")
+    .setDescription("Delete messages")
+    .addIntegerOption(o => o.setName("amount").setRequired(true)),
+
+  // WARN SYSTEM
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("unwarn")
-    .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("clearwarn")
-    .setDescription("Clear warns")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
   new SlashCommandBuilder().setName("warnlist").setDescription("Warn list"),
 
   new SlashCommandBuilder()
     .setName("warninfo")
-    .setDescription("Warn history")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+    .setDescription("Warn info")
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
-    .setName("kick")
-    .setDescription("Kick user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .setName("unwarn")
+    .setDescription("Remove warn")
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
-    .setName("ban")
-    .setDescription("Ban user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("timeout")
-    .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("untimeout")
-    .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("purge")
-    .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("addrole")
-    .setDescription("Add multiple roles")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
-    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
-    .addRoleOption(o => o.setName("role3").setDescription("Role 3"))
-    .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
-    .addRoleOption(o => o.setName("role5").setDescription("Role 5")),
-
-  new SlashCommandBuilder()
-    .setName("removerole")
-    .setDescription("Remove multiple roles")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
-    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
-    .addRoleOption(o => o.setName("role3").setDescription("Role 3"))
-    .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
-    .addRoleOption(o => o.setName("role5").setDescription("Role 5"))
+    .setName("clearwarn")
+    .setDescription("Clear warns")
+    .addUserOption(o => o.setName("user").setRequired(true))
 
 ].map(c => c.toJSON());
 
 // ===== READY =====
 client.once("clientReady", async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(`Logged in as ${client.user.tag}`);
 
-  const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
-  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-  console.log("🚀 Commands synced");
+  await rest.put(
+    Routes.applicationCommands(client.user.id),
+    { body: commands }
+  );
+
+  console.log("Commands synced");
 });
 
-// ===== COMMAND HANDLER =====
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+// ===== INTERACTIONS =====
+client.on("interactionCreate", async (i) => {
 
-  const cmd = interaction.commandName;
-  const isPublic = cmd === "serverinfo";
+  // ===== TICKET DROPDOWN =====
+  if (i.isStringSelectMenu() && i.customId === "ticket_select") {
 
-  await interaction.deferReply({ ephemeral: !isPublic });
+    const channel = await i.guild.channels.create({
+      name: `ticket-${i.user.username}`,
+      parent: TICKET_CATEGORY,
+      permissionOverwrites: [
+        { id: i.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+        { id: i.user.id, allow: [PermissionsBitField.Flags.ViewChannel] },
+        { id: STAFF_ROLE, allow: [PermissionsBitField.Flags.ViewChannel] }
+      ]
+    });
 
-  try {
-    const user = interaction.options.getUser("user");
-    const member = user ? await interaction.guild.members.fetch(user.id).catch(()=>null) : null;
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("claim")
+        .setLabel("Claim")
+        .setStyle(ButtonStyle.Success)
+    );
 
-    if (cmd === "ping") return interaction.editReply("🏓 Pong!");
+    await channel.send({
+      content: `Ticket created by <@${i.user.id}>`,
+      components: [row]
+    });
 
-    if (cmd === "serverinfo") {
-      return interaction.editReply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("🌆 City Role Play")
-            .setImage("https://i.imgur.com/JeZR5OO.jpg")
-            .setDescription(`👋 Welcome to City Role Play!
-
-🎭 Police | Criminal | Business
-
-📜 Follow rules & enjoy RP
-
-🚀 Build your story`)
-            .setColor("Blue")
-        ]
-      });
-    }
-
-    if (cmd === "announce") {
-      const msg = interaction.options.getString("message");
-      const channel = interaction.options.getChannel("channel") || interaction.channel;
-      const image = interaction.options.getString("image");
-
-      let finalMsg = msg;
-      if (image) finalMsg += `\n${image}`;
-
-      await channel.send(finalMsg);
-      return interaction.editReply("📤 Announcement sent");
-    }
-
-    if (cmd === "warn") {
-      const reason = interaction.options.getString("reason");
-
-      let data = await Warn.findOne({ userId: member.id }) || new Warn({ userId: member.id });
-
-      data.warns++;
-
-      if (data.warns >= 3) {
-        await member.timeout(86400000);
-        await interaction.channel.send(`🚫 <@${member.id}> got 3 warns → 24h timeout`);
-        data.warns = 0;
-        data.history = [];
-      } else {
-        await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)\nReason: ${reason}`);
-      }
-
-      data.history.push({ reason, date: new Date().toLocaleString() });
-      await data.save();
-
-      return interaction.editReply("✅ Warn added");
-    }
-
-    if (cmd === "warnlist") {
-      const data = await Warn.find({ warns: { $gt: 0 } });
-      return interaction.editReply(data.map(d => `<@${d.userId}> → ${d.warns}/3`).join("\n") || "No warns");
-    }
-
-    if (cmd === "warninfo") {
-      const data = await Warn.findOne({ userId: user.id });
-      if (!data) return interaction.editReply("No history");
-      return interaction.editReply(data.history.map((h,i)=>`${i+1}. ${h.reason}`).join("\n"));
-    }
-
-    if (cmd === "unwarn") {
-      let data = await Warn.findOne({ userId: member.id });
-      if (!data || data.warns === 0) return interaction.editReply("No warns");
-
-      data.warns--;
-      data.history.pop();
-      await data.save();
-
-      await interaction.channel.send(`✅ <@${member.id}> warning removed`);
-      return interaction.editReply("Done");
-    }
-
-    if (cmd === "clearwarn") {
-      await Warn.deleteOne({ userId: member.id });
-      await interaction.channel.send(`🧹 <@${member.id}> warnings cleared`);
-      return interaction.editReply("Done");
-    }
-
-    if (cmd === "kick") {
-      const reason = interaction.options.getString("reason");
-      await member.kick(reason);
-      await interaction.channel.send(`🦶 <@${member.id}> kicked\nReason: ${reason}`);
-      return interaction.editReply("✅ Kicked");
-    }
-
-    if (cmd === "ban") {
-      const reason = interaction.options.getString("reason");
-      await member.ban({ reason });
-      await interaction.channel.send(`🔨 <@${member.id}> banned\nReason: ${reason}`);
-      return interaction.editReply("✅ Banned");
-    }
-
-    if (cmd === "timeout") {
-      const duration = interaction.options.getInteger("duration");
-      await member.timeout(duration * 60000);
-      return interaction.editReply("✅ Timeout applied");
-    }
-
-    if (cmd === "untimeout") {
-      await member.timeout(null);
-      return interaction.editReply("✅ Timeout removed");
-    }
-
-    if (cmd === "purge") {
-      const amount = interaction.options.getInteger("amount");
-      await interaction.channel.bulkDelete(amount, true);
-      return interaction.editReply(`🧹 Deleted ${amount}`);
-    }
-
-    if (cmd === "addrole") {
-      const roles = ["role1","role2","role3","role4","role5"]
-        .map(r => interaction.options.getRole(r))
-        .filter(Boolean);
-
-      for (const role of roles) {
-        await member.roles.add(role).catch(()=>{});
-      }
-
-      return interaction.editReply("✅ Roles added");
-    }
-
-    if (cmd === "removerole") {
-      const roles = ["role1","role2","role3","role4","role5"]
-        .map(r => interaction.options.getRole(r))
-        .filter(Boolean);
-
-      for (const role of roles) {
-        await member.roles.remove(role).catch(()=>{});
-      }
-
-      return interaction.editReply("✅ Roles removed");
-    }
-
-  } catch (err) {
-    console.error(err);
-    return interaction.editReply("❌ Error");
+    return i.reply({ content: `Created ${channel}`, ephemeral: true });
   }
-});
 
-// ===== GREETING =====
-client.on("messageCreate", msg => {
-  if (msg.author.bot) return;
+  // ===== CLAIM =====
+  if (i.isButton() && i.customId === "claim") {
+    if (!i.member.roles.cache.has(STAFF_ROLE))
+      return i.reply({ content: "No permission", ephemeral: true });
 
-  if (["hi","hello","hey"].includes(msg.content.toLowerCase())) {
-    msg.reply(`👋 Greetings, ${msg.author.username}! Welcome to CRP 🌆`);
+    return i.reply({ content: "Ticket claimed", ephemeral: true });
+  }
+
+  if (!i.isChatInputCommand()) return;
+
+  const cmd = i.commandName;
+  await i.deferReply({ ephemeral: true });
+
+  const member = i.options.getMember("user");
+
+  // ===== BASIC =====
+  if (cmd === "ping") return i.editReply("🏓 Pong");
+
+  if (cmd === "serverinfo") {
+    return i.editReply({
+      embeds: [new EmbedBuilder().setTitle("RP Server")]
+    });
+  }
+
+  // ===== ANNOUNCE =====
+  if (cmd === "announce") {
+    i.channel.send(i.options.getString("message"));
+    return i.editReply("Sent");
+  }
+
+  // ===== TICKET PANEL =====
+  if (cmd === "ticketpanel") {
+    const row = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("ticket_select")
+        .setPlaceholder("Select ticket type")
+        .addOptions([
+          { label: "Support", value: "support" },
+          { label: "Police", value: "police" },
+          { label: "Complaint", value: "complaint" }
+        ])
+    );
+
+    await i.channel.send({ content: "Open ticket", components: [row] });
+    return i.editReply("Panel sent");
+  }
+
+  // ===== CLOSE + TRANSCRIPT =====
+  if (cmd === "close") {
+    const file = await transcripts.createTranscript(i.channel);
+
+    const log = i.guild.channels.cache.get(LOG_CHANNEL);
+    if (log) log.send({ files: [file] });
+
+    await i.editReply("Closing...");
+    setTimeout(() => i.channel.delete(), 3000);
+  }
+
+  // ===== MODERATION =====
+  if (cmd === "kick") {
+    await member.kick();
+    return i.editReply("Kicked");
+  }
+
+  if (cmd === "ban") {
+    await member.ban();
+    return i.editReply("Banned");
+  }
+
+  if (cmd === "timeout") {
+    await member.timeout(i.options.getInteger("time") * 60000);
+    return i.editReply("Timed out");
+  }
+
+  if (cmd === "untimeout") {
+    await member.timeout(null);
+    return i.editReply("Untimed out");
+  }
+
+  if (cmd === "purge") {
+    await i.channel.bulkDelete(i.options.getInteger("amount"));
+    return i.editReply("Deleted messages");
+  }
+
+  // ===== WARN SYSTEM =====
+  if (cmd === "warn") {
+    const user = i.options.getUser("user");
+    const reason = i.options.getString("reason");
+
+    let data = await Warn.findOne({ userId: user.id }) || new Warn({ userId: user.id });
+
+    data.warns++;
+    data.history.push({ reason, date: new Date() });
+
+    await data.save();
+
+    return i.editReply(`Warned ${user.tag}`);
   }
 });
 
 // ===== LOGIN =====
-client.login(process.env.DISCORD_BOT_TOKEN);
+client.login(TOKEN);
