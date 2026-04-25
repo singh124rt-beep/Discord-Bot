@@ -52,7 +52,7 @@ client.on("messageCreate", async (msg) => {
 
   if (msg.content.toLowerCase() === "hi") {
     const embed = new EmbedBuilder()
-      .setDescription("hi")
+      .setDescription("hi 👋")
       .setImage("https://i.imgur.com/8Km9tLL.png")
       .setColor(0x00ffcc);
 
@@ -63,50 +63,99 @@ client.on("messageCreate", async (msg) => {
 // ===== COMMANDS =====
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Ping"),
-  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
+  new SlashCommandBuilder()
+    .setName("ping")
+    .setDescription("Check bot ping"),
 
-  // ✅ FIXED ANNOUNCE
+  new SlashCommandBuilder()
+    .setName("serverinfo")
+    .setDescription("Show server information"),
+
   new SlashCommandBuilder()
     .setName("announce")
-    .setDescription("Announcement")
+    .setDescription("Send announcement")
     .addStringOption(o =>
-      o.setName("message").setDescription("Message").setRequired(true))
+      o.setName("message")
+        .setDescription("Announcement message")
+        .setRequired(true))
     .addChannelOption(o =>
-      o.setName("channel").setDescription("Channel").setRequired(false))
+      o.setName("channel")
+        .setDescription("Target channel (optional)"))
     .addStringOption(o =>
-      o.setName("image").setDescription("Image URL").setRequired(false)),
-
-  new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
+      o.setName("image")
+        .setDescription("Image URL (optional)")),
 
   new SlashCommandBuilder()
+    .setName("ticketpanel")
+    .setDescription("Send ticket panel"),
+
+  // ===== MOD =====
+  new SlashCommandBuilder()
     .setName("kick")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .setDescription("Kick a user")
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User to kick")
+        .setRequired(true))
+    .addStringOption(o =>
+      o.setName("reason")
+        .setDescription("Reason")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .setDescription("Ban a user")
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User to ban")
+        .setRequired(true))
+    .addStringOption(o =>
+      o.setName("reason")
+        .setDescription("Reason")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addIntegerOption(o => o.setName("time").setRequired(true))
-    .addStringOption(o => o.setName("reason")),
+    .setDescription("Timeout a user")
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User to timeout")
+        .setRequired(true))
+    .addIntegerOption(o =>
+      o.setName("time")
+        .setDescription("Time in minutes")
+        .setRequired(true))
+    .addStringOption(o =>
+      o.setName("reason")
+        .setDescription("Reason")),
 
   new SlashCommandBuilder()
     .setName("untimeout")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+    .setDescription("Remove timeout")
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
-    .addIntegerOption(o => o.setName("amount").setRequired(true)),
+    .setDescription("Delete messages")
+    .addIntegerOption(o =>
+      o.setName("amount")
+        .setDescription("Number of messages")
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("warn")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .setDescription("Warn a user")
+    .addUserOption(o =>
+      o.setName("user")
+        .setDescription("User")
+        .setRequired(true))
+    .addStringOption(o =>
+      o.setName("reason")
+        .setDescription("Reason")
+        .setRequired(true))
 
 ].map(c => c.toJSON());
 
@@ -117,12 +166,11 @@ client.once("clientReady", async () => {
   console.log("Bot Ready");
 });
 
-// ===== INTERACTION =====
+// ===== INTERACTIONS =====
 client.on("interactionCreate", async (i) => {
 
   // ===== TICKET PANEL =====
   if (i.isChatInputCommand() && i.commandName === "ticketpanel") {
-
     const menu = new StringSelectMenuBuilder()
       .setCustomId("ticket_menu")
       .setPlaceholder("Select Ticket Type")
@@ -139,7 +187,6 @@ client.on("interactionCreate", async (i) => {
 
   // ===== CREATE TICKET =====
   if (i.isStringSelectMenu()) {
-
     const channel = await i.guild.channels.create({
       name: `ticket-${i.user.username}`,
       parent: TICKET_CATEGORY,
@@ -155,10 +202,7 @@ client.on("interactionCreate", async (i) => {
       new ButtonBuilder().setCustomId("close").setLabel("Close").setStyle(ButtonStyle.Danger)
     );
 
-    channel.send({
-      content: `🎟️ Ticket created by <@${i.user.id}>`,
-      components: [buttons]
-    });
+    channel.send({ content: `🎟️ Ticket by <@${i.user.id}>`, components: [buttons] });
 
     return i.reply({ content: `Created: ${channel}`, ephemeral: true });
   }
@@ -177,6 +221,7 @@ client.on("interactionCreate", async (i) => {
       const file = await transcripts.createTranscript(i.channel);
       const log = i.guild.channels.cache.get(LOG_CHANNEL);
       if (log) log.send({ files: [file] });
+
       await i.channel.delete();
       return;
     }
@@ -189,25 +234,8 @@ client.on("interactionCreate", async (i) => {
   const user = i.options.getUser("user");
   const member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
 
-  // ===== SERVER INFO =====
-  if (i.commandName === "serverinfo") {
-    const embed = new EmbedBuilder()
-      .setTitle("👋 Welcome to City Role Play!")
-      .setDescription(`
-🎭 Choose roles like Police, Criminal, Citizen  
-📜 Follow rules  
-🚀 Start your RP journey  
-💬 Ask staff if needed
-`)
-      .setImage("https://i.imgur.com/8Km9tLL.png")
-      .setColor(0x00ffcc);
-
-    return i.editReply({ embeds: [embed] });
-  }
-
-  // ===== ANNOUNCE FIXED =====
+  // ===== ANNOUNCE =====
   if (i.commandName === "announce") {
-
     const msg = i.options.getString("message");
     const ch = i.options.getChannel("channel") || i.channel;
     const img = i.options.getString("image");
@@ -238,9 +266,7 @@ client.on("interactionCreate", async (i) => {
   // ===== UNTIMEOUT =====
   if (i.commandName === "untimeout") {
     await member.timeout(null);
-
     i.channel.send(`✅ ${user.tag} timeout removed`);
-
     return i.editReply("Removed");
   }
 
