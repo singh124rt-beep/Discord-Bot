@@ -1,7 +1,7 @@
+// ===== SAME IMPORTS =====
 const express = require("express");
 const mongoose = require("mongoose");
 const OpenAI = require("openai");
-
 const {
   Client,
   GatewayIntentBits,
@@ -29,9 +29,9 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(console.error);
 
 // ===== AI =====
-const ai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const ai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 // ===== WARN MODEL =====
 const Warn = mongoose.model("Warn", new mongoose.Schema({
@@ -60,18 +60,17 @@ const allowedUsers = [
 // ===== COMMANDS =====
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Ping bot"),
+  new SlashCommandBuilder().setName("ping").setDescription("Ping"),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
     .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").setDescription("Channel"))
-    .addStringOption(o => o.setName("image").setDescription("Image URL")),
+    .addChannelOption(o => o.setName("channel").setDescription("Channel")),
 
   new SlashCommandBuilder()
     .setName("serverinfo")
-    .setDescription("Server info"),
+    .setDescription("Show server info"),
 
   new SlashCommandBuilder()
     .setName("warn")
@@ -87,6 +86,13 @@ const commands = [
   new SlashCommandBuilder()
     .setName("clearwarn")
     .setDescription("Clear warns")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  new SlashCommandBuilder().setName("warnlist").setDescription("Warn list"),
+
+  new SlashCommandBuilder()
+    .setName("warninfo")
+    .setDescription("Warn history")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
@@ -105,13 +111,17 @@ const commands = [
     .setName("timeout")
     .setDescription("Timeout user")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("untimeout")
     .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("purge")
+    .setDescription("Delete messages")
+    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true))
 
 ].map(c => c.toJSON());
 
@@ -130,16 +140,17 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   const cmd = interaction.commandName;
-  const publicCmds = ["serverinfo"];
+  const isPublic = cmd === "serverinfo";
 
-  await interaction.deferReply({ ephemeral: !publicCmds.includes(cmd) });
+  await interaction.deferReply({ ephemeral: !isPublic });
 
   try {
-    const user = interaction.options.getUser("user");
-    const member = user ? await interaction.guild.members.fetch(user.id) : null;
+    if (cmd !== "serverinfo" && !allowedUsers.includes(interaction.user.id)) {
+      return interaction.editReply("❌ No permission");
+    }
 
-    // ===== PING =====
-    if (cmd === "ping") return interaction.editReply("🏓 Pong!");
+    const user = interaction.options.getUser("user");
+    const member = user ? await interaction.guild.members.fetch(user.id).catch(()=>null) : null;
 
     // ===== SERVER INFO =====
     if (cmd === "serverinfo") {
@@ -150,11 +161,9 @@ client.on("interactionCreate", async (interaction) => {
             .setImage("https://i.imgur.com/JeZR5OO.jpg")
             .setDescription(`👋 Welcome to City Role Play!
 
-🎭 Pick your role and enjoy RP
-
-📜 Follow rules
-
-🚀 Start your journey`)
+🎭 Police | Criminal | Business  
+📜 Follow rules & enjoy RP  
+🚀 Build your story`)
         ]
       });
     }
@@ -170,105 +179,75 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== WARN =====
     if (cmd === "warn") {
-      const reason = interaction.options.getString("reason");
-
       let data = await Warn.findOne({ userId: member.id }) || new Warn({ userId: member.id });
 
       data.warns++;
-      data.history.push({ reason, date: new Date().toLocaleString() });
-      await data.save();
-
-      await interaction.editReply("✅ Warned");
-
-      await interaction.channel.send(`⚠️ <@${member.id}> has been warned (${data.warns}/3)\nReason: ${reason}`);
+      data.history.push({ reason: interaction.options.getString("reason"), date: new Date().toLocaleString() });
 
       if (data.warns >= 3) {
-        await member.timeout(86400000, "3 warns");
-        await interaction.channel.send(`🚫 <@${member.id}> timed out for 24 hours`);
+        await member.timeout(86400000);
+        await interaction.channel.send(`🚫 <@${member.id}> got 3 warns → 24h timeout`);
         data.warns = 0;
         data.history = [];
-        await data.save();
+      } else {
+        await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)`);
       }
+
+      await data.save();
+      return interaction.editReply("✅ Warn added");
     }
 
     // ===== KICK =====
     if (cmd === "kick") {
-      const reason = interaction.options.getString("reason");
-
-      await member.kick(reason);
-
-      await interaction.editReply("✅ Kicked");
-      await interaction.channel.send(`🦶 <@${member.id}> has been kicked\nReason: ${reason}`);
+      await member.kick();
+      await interaction.channel.send(`🦶 <@${member.id}> has been kicked`);
+      return interaction.editReply("✅ Kicked");
     }
 
     // ===== BAN =====
     if (cmd === "ban") {
-      const reason = interaction.options.getString("reason");
-
-      await member.ban({ reason });
-
-      await interaction.editReply("✅ Banned");
-      await interaction.channel.send(`🔨 <@${member.id}> has been banned\nReason: ${reason}`);
+      await member.ban();
+      await interaction.channel.send(`🔨 <@${member.id}> has been banned`);
+      return interaction.editReply("✅ Banned");
     }
 
-    // ===== TIMEOUT =====
-    if (cmd === "timeout") {
-      const mins = interaction.options.getInteger("duration");
-      const reason = interaction.options.getString("reason");
-
-      await member.timeout(mins * 60000, reason);
-
-      await interaction.editReply("✅ Timed out");
-      await interaction.channel.send(`⏳ <@${member.id}> timed out for ${mins} mins\nReason: ${reason}`);
-    }
-
-    // ===== UNTIMEOUT =====
-    if (cmd === "untimeout") {
-      await member.timeout(null);
-
-      await interaction.editReply("✅ Timeout removed");
-      await interaction.channel.send(`✅ <@${member.id}> timeout removed`);
+    // ===== PURGE =====
+    if (cmd === "purge") {
+      const amount = interaction.options.getInteger("amount");
+      await interaction.channel.bulkDelete(amount);
+      return interaction.editReply(`Deleted ${amount}`);
     }
 
   } catch (err) {
     console.error(err);
-    interaction.editReply("❌ Error occurred");
+    return interaction.editReply("❌ Error");
   }
 });
 
 // ===== GREETING =====
-client.on("messageCreate", (msg) => {
+client.on("messageCreate", msg => {
   if (msg.author.bot) return;
-
-  const text = msg.content.toLowerCase();
-
-  if (["hi","hello","hey"].includes(text)) {
-    msg.reply(`👋 Greetings, ${msg.author.username}! Welcome to CRP`);
+  if (["hi","hello","hey"].includes(msg.content.toLowerCase())) {
+    msg.reply(`👋 Greetings, ${msg.author.username} Welcome to CRP`);
   }
 });
 
 // ===== AI =====
 client.on("messageCreate", async (message) => {
+  if (!ai) return;
   if (message.author.bot) return;
   if (!message.mentions.has(client.user)) return;
 
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return message.reply("⚠️ AI not configured");
-    }
-
     const prompt = message.content.replace(/<@!?\d+>/g, "").trim();
-
     const res = await ai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }]
     });
 
     message.reply(res.choices[0].message.content);
-
-  } catch (err) {
-    console.error(err);
-    message.reply("⚠️ AI error");
+  } catch {
+    message.reply("AI error");
   }
 });
 
