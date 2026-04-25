@@ -57,12 +57,10 @@ const allowedUsers = [
   "1420063137838923868"
 ];
 
-const purgeRoleId = "1390273593040048220";
-
 // ===== COMMANDS =====
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Check bot ping"),
+  new SlashCommandBuilder().setName("ping").setDescription("Ping bot"),
 
   new SlashCommandBuilder()
     .setName("announce")
@@ -73,7 +71,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("serverinfo")
-    .setDescription("Show server info"),
+    .setDescription("Server info"),
 
   new SlashCommandBuilder()
     .setName("warn")
@@ -89,13 +87,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName("clearwarn")
     .setDescription("Clear warns")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder().setName("warnlist").setDescription("Warn list"),
-
-  new SlashCommandBuilder()
-    .setName("warninfo")
-    .setDescription("Warn history")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
@@ -120,12 +111,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName("untimeout")
     .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("purge")
-    .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true))
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
 
 ].map(c => c.toJSON());
 
@@ -144,23 +130,18 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   const cmd = interaction.commandName;
-  const publicCmds = ["serverinfo","warnlist","warninfo"];
+  const publicCmds = ["serverinfo"];
 
   await interaction.deferReply({ ephemeral: !publicCmds.includes(cmd) });
 
   try {
-    const allowed = allowedUsers.includes(interaction.user.id);
     const user = interaction.options.getUser("user");
     const member = user ? await interaction.guild.members.fetch(user.id) : null;
-
-    if (!["ping","serverinfo","warnlist","warninfo"].includes(cmd)) {
-      if (!allowed) return interaction.editReply("❌ No permission");
-    }
 
     // ===== PING =====
     if (cmd === "ping") return interaction.editReply("🏓 Pong!");
 
-    // ===== SERVER INFO (PUBLIC) =====
+    // ===== SERVER INFO =====
     if (cmd === "serverinfo") {
       return interaction.editReply({
         embeds: [
@@ -169,13 +150,22 @@ client.on("interactionCreate", async (interaction) => {
             .setImage("https://i.imgur.com/JeZR5OO.jpg")
             .setDescription(`👋 Welcome to City Role Play!
 
-🎭 Pick your role and build your story.
+🎭 Pick your role and enjoy RP
 
-📜 Follow rules.
+📜 Follow rules
 
-🚀 Enjoy RP!`)
+🚀 Start your journey`)
         ]
       });
+    }
+
+    // ===== ANNOUNCE =====
+    if (cmd === "announce") {
+      const msg = interaction.options.getString("message");
+      const channel = interaction.options.getChannel("channel") || interaction.channel;
+
+      await channel.send(msg);
+      return interaction.editReply("📤 Announcement sent");
     }
 
     // ===== WARN =====
@@ -186,40 +176,58 @@ client.on("interactionCreate", async (interaction) => {
 
       data.warns++;
       data.history.push({ reason, date: new Date().toLocaleString() });
-
       await data.save();
 
-      await interaction.editReply("✅ Warn added");
+      await interaction.editReply("✅ Warned");
 
-      await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)\nReason: ${reason}`);
+      await interaction.channel.send(`⚠️ <@${member.id}> has been warned (${data.warns}/3)\nReason: ${reason}`);
 
       if (data.warns >= 3) {
         await member.timeout(86400000, "3 warns");
-        await interaction.channel.send(`🚫 <@${member.id}> timed out for 24hrs`);
+        await interaction.channel.send(`🚫 <@${member.id}> timed out for 24 hours`);
         data.warns = 0;
         data.history = [];
         await data.save();
       }
     }
 
-    // ===== UNWARN =====
-    if (cmd === "unwarn") {
-      let data = await Warn.findOne({ userId: member.id });
-      if (!data) return interaction.editReply("No warns");
+    // ===== KICK =====
+    if (cmd === "kick") {
+      const reason = interaction.options.getString("reason");
 
-      data.warns--;
-      data.history.pop();
-      await data.save();
+      await member.kick(reason);
 
-      await interaction.editReply("✅ Warn removed");
-      await interaction.channel.send(`✔️ <@${member.id}> warn removed (${data.warns}/3)`);
+      await interaction.editReply("✅ Kicked");
+      await interaction.channel.send(`🦶 <@${member.id}> has been kicked\nReason: ${reason}`);
     }
 
-    // ===== CLEAR WARN =====
-    if (cmd === "clearwarn") {
-      await Warn.deleteOne({ userId: member.id });
-      await interaction.editReply("✅ Cleared");
-      await interaction.channel.send(`🧹 <@${member.id}> all warns cleared`);
+    // ===== BAN =====
+    if (cmd === "ban") {
+      const reason = interaction.options.getString("reason");
+
+      await member.ban({ reason });
+
+      await interaction.editReply("✅ Banned");
+      await interaction.channel.send(`🔨 <@${member.id}> has been banned\nReason: ${reason}`);
+    }
+
+    // ===== TIMEOUT =====
+    if (cmd === "timeout") {
+      const mins = interaction.options.getInteger("duration");
+      const reason = interaction.options.getString("reason");
+
+      await member.timeout(mins * 60000, reason);
+
+      await interaction.editReply("✅ Timed out");
+      await interaction.channel.send(`⏳ <@${member.id}> timed out for ${mins} mins\nReason: ${reason}`);
+    }
+
+    // ===== UNTIMEOUT =====
+    if (cmd === "untimeout") {
+      await member.timeout(null);
+
+      await interaction.editReply("✅ Timeout removed");
+      await interaction.channel.send(`✅ <@${member.id}> timeout removed`);
     }
 
   } catch (err) {
@@ -257,6 +265,7 @@ client.on("messageCreate", async (message) => {
     });
 
     message.reply(res.choices[0].message.content);
+
   } catch (err) {
     console.error(err);
     message.reply("⚠️ AI error");
