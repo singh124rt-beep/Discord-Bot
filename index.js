@@ -27,9 +27,7 @@ app.get("/", (_, res) => res.send("Alive"));
 app.listen(3000);
 
 // ===== MONGO =====
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("Mongo Connected"))
-  .catch(console.error);
+mongoose.connect(process.env.MONGO_URI);
 
 // ===== WARN DB =====
 const Warn = mongoose.model("Warn", new mongoose.Schema({
@@ -48,121 +46,99 @@ const client = new Client({
   ]
 });
 
-// ===== LOG SYSTEM =====
-async function sendLog(guild, title, desc, color = 0xff0000) {
-  const ch = guild.channels.cache.get(LOG_CHANNEL);
-  if (!ch) return;
-
-  const embed = new EmbedBuilder()
-    .setTitle(title)
-    .setDescription(desc)
-    .setColor(color)
-    .setTimestamp();
-
-  ch.send({ embeds: [embed] }).catch(() => {});
-}
-
-// ===== ANTI SPAM =====
-const spam = new Map();
-
+// ===== GREETING =====
 client.on("messageCreate", async (msg) => {
   if (msg.author.bot) return;
 
-  const data = spam.get(msg.author.id) || { c: 0, t: Date.now() };
+  if (msg.content.toLowerCase() === "hi") {
+    const embed = new EmbedBuilder()
+      .setDescription("hi")
+      .setImage("https://i.imgur.com/8Km9tLL.png")
+      .setColor(0x00ffcc);
 
-  if (Date.now() - data.t < 5000) {
-    data.c++;
-    if (data.c >= 5) {
-      await msg.member.timeout(10 * 60 * 1000).catch(() => {});
-      msg.channel.send(`🚫 ${msg.author.tag} muted for spam`);
-      spam.delete(msg.author.id);
-      return;
-    }
-  } else {
-    spam.set(msg.author.id, { c: 1, t: Date.now() });
+    msg.reply({ embeds: [embed] });
   }
 });
 
 // ===== COMMANDS =====
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
+  new SlashCommandBuilder().setName("ping").setDescription("Ping"),
   new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
 
+  // ✅ FIXED ANNOUNCE
   new SlashCommandBuilder()
     .setName("announce")
-    .setDescription("Send announcement")
+    .setDescription("Announcement")
+    .addStringOption(o =>
+      o.setName("message").setDescription("Message").setRequired(true))
     .addChannelOption(o =>
-      o.setName("channel").setDescription("Channel").setRequired(true)
-    )
+      o.setName("channel").setDescription("Channel").setRequired(false))
     .addStringOption(o =>
-      o.setName("message").setDescription("Message").setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("image").setDescription("Image URL").setRequired(false)
-    ),
+      o.setName("image").setDescription("Image URL").setRequired(false)),
 
   new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
-  new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
 
-  // MODERATION
   new SlashCommandBuilder()
     .setName("kick")
-    .setDescription("Kick user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
-    .setDescription("Ban user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
-    .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(false)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addIntegerOption(o => o.setName("time").setRequired(true))
+    .addStringOption(o => o.setName("reason")),
 
   new SlashCommandBuilder()
     .setName("untimeout")
-    .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
-    .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setDescription("Count").setRequired(true)),
+    .addIntegerOption(o => o.setName("amount").setRequired(true)),
 
-  // WARN
   new SlashCommandBuilder()
     .setName("warn")
-    .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addStringOption(o => o.setName("reason").setRequired(true)),
 
 ].map(c => c.toJSON());
 
 // ===== READY =====
 client.once("clientReady", async () => {
-  console.log(`Logged in as ${client.user.tag}`);
-
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
-
-  await rest.put(
-    Routes.applicationCommands(client.user.id),
-    { body: commands }
-  );
-
-  console.log("Commands synced");
+  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+  console.log("Bot Ready");
 });
 
-// ===== INTERACTIONS =====
+// ===== INTERACTION =====
 client.on("interactionCreate", async (i) => {
 
-  // ===== TICKET MENU =====
-  if (i.isStringSelectMenu() && i.customId === "ticket_select") {
+  // ===== TICKET PANEL =====
+  if (i.isChatInputCommand() && i.commandName === "ticketpanel") {
+
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId("ticket_menu")
+      .setPlaceholder("Select Ticket Type")
+      .addOptions([
+        { label: "Support", value: "support" },
+        { label: "Report", value: "report" },
+        { label: "Help", value: "help" }
+      ]);
+
+    const row = new ActionRowBuilder().addComponents(menu);
+
+    return i.reply({ content: "🎟️ Create a ticket", components: [row] });
+  }
+
+  // ===== CREATE TICKET =====
+  if (i.isStringSelectMenu()) {
 
     const channel = await i.guild.channels.create({
       name: `ticket-${i.user.username}`,
@@ -174,141 +150,119 @@ client.on("interactionCreate", async (i) => {
       ]
     });
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("claim")
-        .setLabel("Claim")
-        .setStyle(ButtonStyle.Success)
+    const buttons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("claim").setLabel("Claim").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("close").setLabel("Close").setStyle(ButtonStyle.Danger)
     );
 
-    await channel.send({
+    channel.send({
       content: `🎟️ Ticket created by <@${i.user.id}>`,
-      components: [row]
+      components: [buttons]
     });
 
-    await sendLog(i.guild, "🎟️ Ticket Created", `User: <@${i.user.id}>`, 0x00ff99);
-
-    return i.reply({ content: `Ticket created: ${channel}`, ephemeral: true });
+    return i.reply({ content: `Created: ${channel}`, ephemeral: true });
   }
 
-  // ===== CLAIM =====
-  if (i.isButton() && i.customId === "claim") {
-    if (!i.member.roles.cache.has(STAFF_ROLE))
-      return i.reply({ content: "No permission", ephemeral: true });
+  // ===== BUTTONS =====
+  if (i.isButton()) {
 
-    return i.reply({ content: "Ticket claimed", ephemeral: true });
+    if (i.customId === "claim") {
+      if (!i.member.roles.cache.has(STAFF_ROLE))
+        return i.reply({ content: "No permission", ephemeral: true });
+
+      return i.reply({ content: "✅ Claimed", ephemeral: true });
+    }
+
+    if (i.customId === "close") {
+      const file = await transcripts.createTranscript(i.channel);
+      const log = i.guild.channels.cache.get(LOG_CHANNEL);
+      if (log) log.send({ files: [file] });
+      await i.channel.delete();
+      return;
+    }
   }
 
   if (!i.isChatInputCommand()) return;
 
-  const cmd = i.commandName;
   await i.deferReply({ ephemeral: true });
 
   const user = i.options.getUser("user");
-  let member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
+  const member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
 
-  try {
+  // ===== SERVER INFO =====
+  if (i.commandName === "serverinfo") {
+    const embed = new EmbedBuilder()
+      .setTitle("👋 Welcome to City Role Play!")
+      .setDescription(`
+🎭 Choose roles like Police, Criminal, Citizen  
+📜 Follow rules  
+🚀 Start your RP journey  
+💬 Ask staff if needed
+`)
+      .setImage("https://i.imgur.com/8Km9tLL.png")
+      .setColor(0x00ffcc);
 
-    if (cmd === "ping") return i.editReply("🏓 Pong");
+    return i.editReply({ embeds: [embed] });
+  }
 
-    if (cmd === "serverinfo") {
-      return i.editReply({ embeds: [new EmbedBuilder().setTitle("City RP Server")] });
-    }
+  // ===== ANNOUNCE FIXED =====
+  if (i.commandName === "announce") {
 
-    if (cmd === "ticketpanel") {
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId("ticket_select")
-        .setPlaceholder("Select ticket type")
-        .addOptions([
-          { label: "Support", value: "support" },
-          { label: "Report", value: "report" }
-        ]);
+    const msg = i.options.getString("message");
+    const ch = i.options.getChannel("channel") || i.channel;
+    const img = i.options.getString("image");
 
-      const row = new ActionRowBuilder().addComponents(menu);
+    const embed = new EmbedBuilder()
+      .setDescription(msg)
+      .setColor(0x00ffcc);
 
-      await i.channel.send({ content: "🎟️ Create a ticket", components: [row] });
+    if (img) embed.setImage(img);
 
-      return i.editReply("Panel sent");
-    }
+    await ch.send({ embeds: [embed] });
 
-    // ===== ANNOUNCE =====
-    if (cmd === "announce") {
-      const ch = i.options.getChannel("channel");
-      const msg = i.options.getString("message");
-      const img = i.options.getString("image");
+    return i.editReply("✅ Announcement sent");
+  }
 
-      const embed = new EmbedBuilder().setDescription(msg).setColor(0x00ffcc);
-      if (img) embed.setImage(img);
+  // ===== TIMEOUT =====
+  if (i.commandName === "timeout") {
+    const time = i.options.getInteger("time");
+    const reason = i.options.getString("reason") || "No reason";
 
-      await ch.send({ embeds: [embed] });
+    await member.timeout(time * 60000);
 
-      return i.editReply("Sent");
-    }
+    i.channel.send(`⏱️ ${user.tag} timed out (${time}m)\n📄 ${reason}`);
 
-    // ===== KICK =====
-    if (cmd === "kick") {
-      const reason = i.options.getString("reason");
-      if (!member) return i.editReply("User not found");
+    return i.editReply("Timed out");
+  }
 
-      await member.kick(reason);
+  // ===== UNTIMEOUT =====
+  if (i.commandName === "untimeout") {
+    await member.timeout(null);
 
-      await i.channel.send(`👢 **${user.tag} has been kicked**\n📄 Reason: ${reason}`);
+    i.channel.send(`✅ ${user.tag} timeout removed`);
 
-      return i.editReply("Kicked");
-    }
+    return i.editReply("Removed");
+  }
 
-    // ===== BAN =====
-    if (cmd === "ban") {
-      const reason = i.options.getString("reason");
-      if (!member) return i.editReply("User not found");
+  // ===== WARN =====
+  if (i.commandName === "warn") {
+    const reason = i.options.getString("reason");
 
-      await member.ban({ reason });
+    let data = await Warn.findOne({ userId: user.id }) || new Warn({ userId: user.id });
 
-      await i.channel.send(`🔨 **${user.tag} has been banned**\n📄 Reason: ${reason}`);
+    data.warns++;
+    await data.save();
 
-      return i.editReply("Banned");
-    }
+    i.channel.send(`⚠️ ${user.tag} warned (${data.warns}/3)\n📄 ${reason}`);
 
-    // ===== TIMEOUT =====
-    if (cmd === "timeout") {
-      const time = i.options.getInteger("time");
-      const reason = i.options.getString("reason") || "No reason";
-
-      if (!member) return i.editReply("User not found");
-
-      await member.timeout(time * 60000, reason);
-
-      await i.channel.send(`⏱️ **${user.tag} timed out**\n⏳ ${time} min\n📄 ${reason}`);
-
-      return i.editReply("Timed out");
-    }
-
-    // ===== WARN =====
-    if (cmd === "warn") {
-      const reason = i.options.getString("reason");
-
-      let data = await Warn.findOne({ userId: user.id }) || new Warn({ userId: user.id, warns: 0, history: [] });
-
-      data.warns++;
-      data.history.push({ reason, date: new Date() });
+    if (data.warns >= 3) {
+      await member.timeout(86400000);
+      i.channel.send(`🚫 ${user.tag} got 24h timeout`);
+      data.warns = 0;
       await data.save();
-
-      await i.channel.send(`⚠️ **${user.tag} warned (${data.warns}/3)**\n📄 ${reason}`);
-
-      if (data.warns >= 3 && member) {
-        await member.timeout(24 * 60 * 60 * 1000);
-        await i.channel.send(`🚫 **${user.tag} got 24h timeout (3 warns)**`);
-        data.warns = 0;
-        data.history = [];
-        await data.save();
-      }
-
-      return i.editReply("Warned");
     }
 
-  } catch (err) {
-    console.error(err);
-    return i.editReply("Error occurred");
+    return i.editReply("Warned");
   }
 
 });
