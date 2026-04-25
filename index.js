@@ -1,4 +1,3 @@
-// ===== SAME IMPORTS =====
 const express = require("express");
 const mongoose = require("mongoose");
 const OpenAI = require("openai");
@@ -111,7 +110,8 @@ const commands = [
     .setName("timeout")
     .setDescription("Timeout user")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true)),
+    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("untimeout")
@@ -126,13 +126,18 @@ const commands = [
 ].map(c => c.toJSON());
 
 // ===== READY =====
-client.once("clientReady", async () => {
+client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
-  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 
-  console.log("🚀 Commands synced");
+  try {
+    console.log("⏳ Syncing commands...");
+    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+    console.log("🚀 Commands synced");
+  } catch (err) {
+    console.error(err);
+  }
 });
 
 // ===== COMMAND HANDLER =====
@@ -161,9 +166,13 @@ client.on("interactionCreate", async (interaction) => {
             .setImage("https://i.imgur.com/JeZR5OO.jpg")
             .setDescription(`👋 Welcome to City Role Play!
 
-🎭 Police | Criminal | Business  
-📜 Follow rules & enjoy RP  
-🚀 Build your story`)
+🎭 Pick your role: Police, Criminal, Business, Citizen
+
+📜 Follow rules & enjoy RP
+
+🚀 Build your own story in the city!
+
+💬 Need help? Ask staff anytime`)
         ]
       });
     }
@@ -179,10 +188,12 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== WARN =====
     if (cmd === "warn") {
+      const reason = interaction.options.getString("reason");
+
       let data = await Warn.findOne({ userId: member.id }) || new Warn({ userId: member.id });
 
       data.warns++;
-      data.history.push({ reason: interaction.options.getString("reason"), date: new Date().toLocaleString() });
+      data.history.push({ reason, date: new Date().toLocaleString() });
 
       if (data.warns >= 3) {
         await member.timeout(86400000);
@@ -190,7 +201,7 @@ client.on("interactionCreate", async (interaction) => {
         data.warns = 0;
         data.history = [];
       } else {
-        await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)`);
+        await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)\nReason: ${reason}`);
       }
 
       await data.save();
@@ -199,23 +210,25 @@ client.on("interactionCreate", async (interaction) => {
 
     // ===== KICK =====
     if (cmd === "kick") {
-      await member.kick();
-      await interaction.channel.send(`🦶 <@${member.id}> has been kicked`);
+      const reason = interaction.options.getString("reason");
+      await member.kick(reason);
+      await interaction.channel.send(`🦶 <@${member.id}> has been kicked\nReason: ${reason}`);
       return interaction.editReply("✅ Kicked");
     }
 
     // ===== BAN =====
     if (cmd === "ban") {
-      await member.ban();
-      await interaction.channel.send(`🔨 <@${member.id}> has been banned`);
+      const reason = interaction.options.getString("reason");
+      await member.ban({ reason });
+      await interaction.channel.send(`🔨 <@${member.id}> has been banned\nReason: ${reason}`);
       return interaction.editReply("✅ Banned");
     }
 
     // ===== PURGE =====
     if (cmd === "purge") {
       const amount = interaction.options.getInteger("amount");
-      await interaction.channel.bulkDelete(amount);
-      return interaction.editReply(`Deleted ${amount}`);
+      await interaction.channel.bulkDelete(amount, true);
+      return interaction.editReply(`🧹 Deleted ${amount} messages`);
     }
 
   } catch (err) {
@@ -227,6 +240,7 @@ client.on("interactionCreate", async (interaction) => {
 // ===== GREETING =====
 client.on("messageCreate", msg => {
   if (msg.author.bot) return;
+
   if (["hi","hello","hey"].includes(msg.content.toLowerCase())) {
     msg.reply(`👋 Greetings, ${msg.author.username} Welcome to CRP`);
   }
@@ -240,14 +254,15 @@ client.on("messageCreate", async (message) => {
 
   try {
     const prompt = message.content.replace(/<@!?\d+>/g, "").trim();
+
     const res = await ai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }]
     });
 
-    message.reply(res.choices[0].message.content);
+    message.reply(res.choices[0].message.content.slice(0, 2000));
   } catch {
-    message.reply("AI error");
+    message.reply("⚠️ AI error");
   }
 });
 
