@@ -1,6 +1,5 @@
 const express = require("express");
 const mongoose = require("mongoose");
-const OpenAI = require("openai");
 
 const {
   Client,
@@ -28,11 +27,6 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ Mongo Connected"))
   .catch(console.error);
 
-// ===== AI =====
-const ai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
-
 // ===== WARN MODEL =====
 const Warn = mongoose.model("Warn", new mongoose.Schema({
   userId: String,
@@ -57,6 +51,49 @@ const allowedUsers = [
   "1420063137838923868"
 ];
 
+// ===== ANTI-SPAM SYSTEM =====
+const spamMap = new Map();
+
+const LIMIT = 5;          // messages
+const TIME = 5000;        // 5 sec
+const MUTE_TIME = 600000; // 10 min
+
+client.on("messageCreate", async (msg) => {
+  if (msg.author.bot) return;
+
+  const userId = msg.author.id;
+
+  if (!spamMap.has(userId)) {
+    spamMap.set(userId, { count: 1, last: Date.now() });
+  } else {
+    const data = spamMap.get(userId);
+
+    if (Date.now() - data.last < TIME) {
+      data.count++;
+      data.last = Date.now();
+
+      if (data.count >= LIMIT) {
+        try {
+          await msg.member.timeout(MUTE_TIME, "Spam detected");
+
+          msg.channel.send(`🚫 <@${userId}> muted for spamming (10 min)`);
+
+          // add warn also
+          let warnData = await Warn.findOne({ userId }) || new Warn({ userId });
+          warnData.warns++;
+          warnData.history.push({ reason: "Spam", date: new Date().toLocaleString() });
+          await warnData.save();
+
+        } catch {}
+        spamMap.delete(userId);
+      }
+
+    } else {
+      spamMap.set(userId, { count: 1, last: Date.now() });
+    }
+  }
+});
+
 // ===== COMMANDS =====
 const commands = [
 
@@ -70,7 +107,7 @@ const commands = [
     .setName("announce")
     .setDescription("Send announcement")
     .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").setDescription("Channel"))
+    .addChannelOption(o => o.setName("channel").setDescription("Channel").addChannelTypes(ChannelType.GuildText))
     .addStringOption(o => o.setName("image").setDescription("Image URL")),
 
   new SlashCommandBuilder()
@@ -123,7 +160,27 @@ const commands = [
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true))
+    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("addrole")
+    .setDescription("Add multiple roles")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
+    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
+    .addRoleOption(o => o.setName("role3").setDescription("Role 3"))
+    .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
+    .addRoleOption(o => o.setName("role5").setDescription("Role 5")),
+
+  new SlashCommandBuilder()
+    .setName("removerole")
+    .setDescription("Remove multiple roles")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
+    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
+    .addRoleOption(o => o.setName("role3").setDescription("Role 3"))
+    .addRoleOption(o => o.setName("role4").setDescription("Role 4"))
+    .addRoleOption(o => o.setName("role5").setDescription("Role 5"))
 
 ].map(c => c.toJSON());
 
@@ -142,22 +199,16 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   const cmd = interaction.commandName;
+  const isPublic = cmd === "serverinfo";
+
+  await interaction.deferReply({ ephemeral: !isPublic });
 
   try {
-    const isPublic = cmd === "serverinfo";
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferReply({ ephemeral: !isPublic });
-    }
-
     const user = interaction.options.getUser("user");
     const member = user ? await interaction.guild.members.fetch(user.id).catch(()=>null) : null;
 
-    // ===== PING =====
-    if (cmd === "ping") {
-      return interaction.editReply("🏓 Pong!");
-    }
+    if (cmd === "ping") return interaction.editReply("🏓 Pong!");
 
-    // ===== SERVER INFO =====
     if (cmd === "serverinfo") {
       return interaction.editReply({
         embeds: [
@@ -176,16 +227,18 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    // ===== ANNOUNCE =====
     if (cmd === "announce") {
       const msg = interaction.options.getString("message");
       const channel = interaction.options.getChannel("channel") || interaction.channel;
+      const image = interaction.options.getString("image");
 
-      await channel.send(msg);
+      let finalMsg = msg;
+      if (image) finalMsg += `\n${image}`;
+
+      await channel.send(finalMsg);
       return interaction.editReply("📤 Announcement sent");
     }
 
-    // ===== WARN =====
     if (cmd === "warn") {
       const reason = interaction.options.getString("reason");
 
@@ -216,7 +269,6 @@ client.on("interactionCreate", async (interaction) => {
     if (cmd === "warninfo") {
       const data = await Warn.findOne({ userId: user.id });
       if (!data) return interaction.editReply("No history");
-
       return interaction.editReply(data.history.map((h,i)=>`${i+1}. ${h.reason}`).join("\n"));
     }
 
@@ -269,37 +321,42 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.editReply(`🧹 Deleted ${amount}`);
     }
 
+    if (cmd === "addrole") {
+      const roles = ["role1","role2","role3","role4","role5"]
+        .map(r => interaction.options.getRole(r))
+        .filter(Boolean);
+
+      for (const role of roles) {
+        await member.roles.add(role).catch(()=>{});
+      }
+
+      return interaction.editReply("✅ Roles added");
+    }
+
+    if (cmd === "removerole") {
+      const roles = ["role1","role2","role3","role4","role5"]
+        .map(r => interaction.options.getRole(r))
+        .filter(Boolean);
+
+      for (const role of roles) {
+        await member.roles.remove(role).catch(()=>{});
+      }
+
+      return interaction.editReply("✅ Roles removed");
+    }
+
   } catch (err) {
     console.error(err);
-    if (!interaction.replied) {
-      interaction.editReply("❌ Error");
-    }
+    return interaction.editReply("❌ Error");
   }
 });
 
-// ===== SINGLE MESSAGE HANDLER (FIXED DOUBLE REPLY) =====
-client.on("messageCreate", async (msg) => {
+// ===== GREETING =====
+client.on("messageCreate", msg => {
   if (msg.author.bot) return;
 
-  // greeting
   if (["hi","hello","hey"].includes(msg.content.toLowerCase())) {
-    return msg.reply(`👋 Greetings, ${msg.author.username}! Welcome to CRP 🌆`);
-  }
-
-  // AI
-  if (ai && msg.mentions.has(client.user)) {
-    try {
-      const prompt = msg.content.replace(/<@!?\d+>/g, "").trim();
-
-      const res = await ai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }]
-      });
-
-      return msg.reply(res.choices[0].message.content.slice(0, 2000));
-    } catch {
-      return msg.reply("⚠️ AI error (check API key)");
-    }
+    msg.reply(`👋 Greetings, ${msg.author.username}! Welcome to CRP 🌆`);
   }
 });
 
