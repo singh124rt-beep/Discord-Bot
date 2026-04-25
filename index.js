@@ -13,7 +13,8 @@ const {
   ButtonBuilder,
   ButtonStyle,
   StringSelectMenuBuilder,
-  PermissionsBitField
+  PermissionsBitField,
+  AttachmentBuilder
 } = require("discord.js");
 
 // ===== CONFIG =====
@@ -46,26 +47,19 @@ const client = new Client({
   ]
 });
 
-// ===== LOG SYSTEM =====
-async function sendLog(guild, title, desc, color = 0xff0000) {
+// ===== LOG =====
+async function sendLog(guild, title, desc) {
   const ch = guild.channels.cache.get(LOG_CHANNEL);
   if (!ch) return;
-  const embed = new EmbedBuilder()
-    .setTitle(title)
-    .setDescription(desc)
-    .setColor(color)
-    .setTimestamp();
-  ch.send({ embeds: [embed] }).catch(() => {});
+  ch.send({ embeds: [new EmbedBuilder().setTitle(title).setDescription(desc).setColor(0xff0000)] });
 }
 
-// ===== ANTI SPAM =====
+// ===== GREETING + ANTISPAM =====
 const spam = new Map();
 client.on("messageCreate", async (msg) => {
   if (msg.author.bot) return;
 
-  if (msg.content.toLowerCase() === "hi") {
-    return msg.reply("hi 👋");
-  }
+  if (msg.content.toLowerCase() === "hi") return msg.reply("hi 👋");
 
   const data = spam.get(msg.author.id) || { c: 0, t: Date.now() };
 
@@ -95,7 +89,7 @@ const commands = [
     .addChannelOption(o => o.setName("channel").setDescription("Channel"))
     .addStringOption(o => o.setName("image").setDescription("Image URL")),
 
-  new SlashCommandBuilder().setName("ticketpanel").setDescription("Open ticket panel"),
+  new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
   new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
 
   new SlashCommandBuilder()
@@ -133,7 +127,7 @@ const commands = [
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
-  new SlashCommandBuilder().setName("warnlist").setDescription("Show all warns"),
+  new SlashCommandBuilder().setName("warnlist").setDescription("Show warns"),
 
   new SlashCommandBuilder()
     .setName("warninfo")
@@ -147,7 +141,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("clearwarn")
-    .setDescription("Clear all warns")
+    .setDescription("Clear warns")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   // MULTI ROLE
@@ -182,201 +176,123 @@ client.once("clientReady", async () => {
 // ===== INTERACTIONS =====
 client.on("interactionCreate", async (i) => {
 
-  // ===== TICKET PANEL =====
-  if (i.isChatInputCommand() && i.commandName === "ticketpanel") {
-    const menu = new StringSelectMenuBuilder()
-      .setCustomId("ticket_select")
-      .setPlaceholder("Choose ticket type")
-      .addOptions([
-        { label: "Support", value: "support" },
-        { label: "Report", value: "report" },
-        { label: "Help", value: "help" }
-      ]);
+  if (i.isChatInputCommand()) {
 
-    return i.reply({
-      content: "🎟️ Create a ticket",
-      components: [new ActionRowBuilder().addComponents(menu)]
-    });
-  }
+    const user = i.options.getUser("user");
+    const member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
 
-  // CREATE TICKET
-  if (i.isStringSelectMenu() && i.customId === "ticket_select") {
-    const channel = await i.guild.channels.create({
-      name: `ticket-${i.user.username}`,
-      parent: TICKET_CATEGORY,
-      permissionOverwrites: [
-        { id: i.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: i.user.id, allow: [PermissionsBitField.Flags.ViewChannel] },
-        { id: STAFF_ROLE, allow: [PermissionsBitField.Flags.ViewChannel] }
-      ]
-    });
+    // PING
+    if (i.commandName === "ping")
+      return i.reply({ content: "🏓 Pong!", ephemeral: true });
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("claim").setLabel("Claim").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId("close_btn").setLabel("Close").setStyle(ButtonStyle.Danger)
-    );
+    // ANNOUNCE (NO LINK SHOWN)
+    if (i.commandName === "announce") {
+      const msg = i.options.getString("message");
+      const ch = i.options.getChannel("channel") || i.channel;
+      const img = i.options.getString("image");
 
-    await channel.send({
-      content: `🎟️ Ticket created by <@${i.user.id}>`,
-      components: [row]
-    });
+      if (img) {
+        const file = new AttachmentBuilder(img);
+        await ch.send({ content: msg, files: [file] });
+      } else {
+        await ch.send({ content: msg });
+      }
 
-    return i.reply({ content: `Ticket: ${channel}`, ephemeral: true });
-  }
-
-  // BUTTONS
-  if (i.isButton()) {
-
-    if (i.customId === "claim") {
-      if (!i.member.roles.cache.has(STAFF_ROLE))
-        return i.reply({ content: "No permission", ephemeral: true });
-
-      return i.reply({ content: "Ticket claimed", ephemeral: true });
+      return i.reply({ content: "Sent", ephemeral: true });
     }
 
-    if (i.customId === "close_btn") {
-      const file = await transcripts.createTranscript(i.channel);
-      const log = i.guild.channels.cache.get(LOG_CHANNEL);
-      if (log) log.send({ files: [file] });
-
-      await i.channel.delete();
+    // KICK
+    if (i.commandName === "kick") {
+      const reason = i.options.getString("reason");
+      await member.kick();
+      i.channel.send(`👢 ${user.tag} has been kicked\n📄 Reason: ${reason}`);
+      return i.reply({ content: "Kicked", ephemeral: true });
     }
-  }
 
-  if (!i.isChatInputCommand()) return;
+    // BAN
+    if (i.commandName === "ban") {
+      const reason = i.options.getString("reason");
+      await member.ban();
+      i.channel.send(`🔨 ${user.tag} has been banned\n📄 Reason: ${reason}`);
+      return i.reply({ content: "Banned", ephemeral: true });
+    }
 
-  const user = i.options.getUser("user");
-  const member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
+    // TIMEOUT
+    if (i.commandName === "timeout") {
+      const time = i.options.getInteger("time");
+      await member.timeout(time * 60000);
+      i.channel.send(`⏱️ ${user.tag} timed out (${time}m)`);
+      return i.reply({ content: "Done", ephemeral: true });
+    }
 
-  // ===== ANNOUNCE =====
-  if (i.commandName === "announce") {
-    const msg = i.options.getString("message");
-    const ch = i.options.getChannel("channel") || i.channel;
-    const img = i.options.getString("image");
+    // UNTIMEOUT
+    if (i.commandName === "untimeout") {
+      await member.timeout(null);
+      i.channel.send(`✅ ${user.tag} timeout removed`);
+      return i.reply({ content: "Done", ephemeral: true });
+    }
 
-    await ch.send(img ? `${msg}\n${img}` : msg);
-    return i.reply({ content: "Sent", ephemeral: true });
-  }
+    // WARN
+    if (i.commandName === "warn") {
+      const reason = i.options.getString("reason");
 
-  // ===== CLOSE COMMAND =====
-  if (i.commandName === "close") {
-    const file = await transcripts.createTranscript(i.channel);
-    const log = i.guild.channels.cache.get(LOG_CHANNEL);
-    if (log) log.send({ files: [file] });
+      let data = await Warn.findOne({ userId: user.id }) || new Warn({ userId: user.id });
 
-    await i.channel.delete();
-  }
-
-  // ===== KICK =====
-  if (i.commandName === "kick") {
-    const reason = i.options.getString("reason");
-    await member.kick();
-    i.channel.send(`👢 ${user.tag} kicked\n📄 ${reason}`);
-    return i.reply({ content: "Kicked", ephemeral: true });
-  }
-
-  // ===== BAN =====
-  if (i.commandName === "ban") {
-    const reason = i.options.getString("reason");
-    await member.ban();
-    i.channel.send(`🔨 ${user.tag} banned\n📄 ${reason}`);
-    return i.reply({ content: "Banned", ephemeral: true });
-  }
-
-  // ===== TIMEOUT =====
-  if (i.commandName === "timeout") {
-    const time = i.options.getInteger("time");
-    await member.timeout(time * 60000);
-    i.channel.send(`⏱️ ${user.tag} timed out (${time}m)`);
-    return i.reply({ content: "Done", ephemeral: true });
-  }
-
-  // ===== UNTIMEOUT =====
-  if (i.commandName === "untimeout") {
-    await member.timeout(null);
-    i.channel.send(`✅ ${user.tag} timeout removed`);
-    return i.reply({ content: "Done", ephemeral: true });
-  }
-
-  // ===== PURGE =====
-  if (i.commandName === "purge") {
-    const amt = i.options.getInteger("amount");
-    await i.channel.bulkDelete(amt);
-    return i.reply({ content: "Deleted", ephemeral: true });
-  }
-
-  // ===== WARN =====
-  if (i.commandName === "warn") {
-    const reason = i.options.getString("reason");
-
-    let data = await Warn.findOne({ userId: user.id }) || new Warn({ userId: user.id });
-
-    data.warns++;
-    data.history.push(reason);
-    await data.save();
-
-    i.channel.send(`⚠️ ${user.tag} warned (${data.warns}/3)\n📄 ${reason}`);
-
-    if (data.warns >= 3) {
-      await member.timeout(86400000);
-      data.warns = 0;
+      data.warns++;
       await data.save();
-      i.channel.send(`🚫 ${user.tag} got 24h timeout`);
+
+      user.send(`⚠️ You were warned in ${i.guild.name}\nReason: ${reason}`).catch(()=>{});
+
+      i.channel.send(`⚠️ ${user.tag} warned (${data.warns}/3)`);
+
+      if (data.warns >= 3) {
+        await member.timeout(86400000);
+        i.channel.send(`🚫 ${user.tag} reached 3/3 → 24h timeout`);
+        data.warns = 0;
+        await data.save();
+      }
+
+      return i.reply({ content: "Warned", ephemeral: true });
     }
 
-    return i.reply({ content: "Warned", ephemeral: true });
-  }
+    // CLEAR WARN
+    if (i.commandName === "clearwarn") {
+      await Warn.findOneAndDelete({ userId: user.id });
+      i.channel.send(`🧹 ${user.tag} warnings removed (0/3)`);
+      return i.reply({ content: "Cleared", ephemeral: true });
+    }
 
-  // ===== WARN LIST =====
-  if (i.commandName === "warnlist") {
-    const all = await Warn.find();
-    return i.reply({
-      content: all.map(w => `<@${w.userId}> : ${w.warns}`).join("\n") || "No warns",
-      ephemeral: true
-    });
-  }
+    // WARNLIST
+    if (i.commandName === "warnlist") {
+      const all = await Warn.find();
+      return i.reply({
+        content: all.map(w => `<@${w.userId}> : ${w.warns}`).join("\n") || "No warns",
+        ephemeral: true
+      });
+    }
 
-  // ===== WARN INFO =====
-  if (i.commandName === "warninfo") {
-    const data = await Warn.findOne({ userId: user.id });
-    return i.reply({
-      content: data ? `${user.tag} : ${data.warns} warns` : "No warns",
-      ephemeral: true
-    });
-  }
+    // WARNINFO
+    if (i.commandName === "warninfo") {
+      const data = await Warn.findOne({ userId: user.id });
+      return i.reply({
+        content: data ? `${user.tag} : ${data.warns}/3` : "No warns",
+        ephemeral: true
+      });
+    }
 
-  // ===== UNWARN =====
-  if (i.commandName === "unwarn") {
-    let data = await Warn.findOne({ userId: user.id });
-    if (!data) return i.reply({ content: "No warns", ephemeral: true });
+    // UNWARN
+    if (i.commandName === "unwarn") {
+      let data = await Warn.findOne({ userId: user.id });
+      if (!data) return i.reply({ content: "No warns", ephemeral: true });
 
-    data.warns = Math.max(0, data.warns - 1);
-    await data.save();
+      data.warns = Math.max(0, data.warns - 1);
+      await data.save();
 
-    return i.reply({ content: "Removed one warn", ephemeral: true });
-  }
+      i.channel.send(`⚠️ ${user.tag} warn removed (${data.warns}/3)`);
+      return i.reply({ content: "Removed", ephemeral: true });
+    }
 
-  // ===== CLEAR WARN =====
-  if (i.commandName === "clearwarn") {
-    await Warn.findOneAndDelete({ userId: user.id });
-    return i.reply({ content: "Cleared", ephemeral: true });
-  }
-
-  // ===== ADD ROLE =====
-  if (i.commandName === "addrole") {
-    const roles = ["role1","role2","role3"].map(r=>i.options.getRole(r)).filter(Boolean);
-    for (const r of roles) await member.roles.add(r);
-    return i.reply({ content: "Roles added", ephemeral: true });
-  }
-
-  // ===== REMOVE ROLE =====
-  if (i.commandName === "removerole") {
-    const roles = ["role1","role2","role3"].map(r=>i.options.getRole(r)).filter(Boolean);
-    for (const r of roles) await member.roles.remove(r);
-    return i.reply({ content: "Roles removed", ephemeral: true });
   }
 
 });
-
-// ===== LOGIN =====
 client.login(process.env.DISCORD_BOT_TOKEN);
