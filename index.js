@@ -58,14 +58,14 @@ const allowedUsers = [
 
 // ===== COMMANDS =====
 const commands = [
-
   new SlashCommandBuilder().setName("ping").setDescription("Ping"),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
     .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").setDescription("Channel")),
+    .addChannelOption(o => o.setName("channel").setDescription("Channel"))
+    .addStringOption(o => o.setName("image").setDescription("Image URL")),
 
   new SlashCommandBuilder()
     .setName("serverinfo")
@@ -76,23 +76,6 @@ const commands = [
     .setDescription("Warn user")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("unwarn")
-    .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("clearwarn")
-    .setDescription("Clear warns")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder().setName("warnlist").setDescription("Warn list"),
-
-  new SlashCommandBuilder()
-    .setName("warninfo")
-    .setDescription("Warn history")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("kick")
@@ -107,37 +90,19 @@ const commands = [
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
-    .setName("timeout")
-    .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("untimeout")
-    .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
     .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true))
-
 ].map(c => c.toJSON());
 
 // ===== READY =====
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
+  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 
-  try {
-    console.log("⏳ Syncing commands...");
-    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log("🚀 Commands synced");
-  } catch (err) {
-    console.error(err);
-  }
+  console.log("🚀 Commands synced");
 });
 
 // ===== COMMAND HANDLER =====
@@ -147,15 +112,21 @@ client.on("interactionCreate", async (interaction) => {
   const cmd = interaction.commandName;
   const isPublic = cmd === "serverinfo";
 
-  await interaction.deferReply({ ephemeral: !isPublic });
-
   try {
-    if (cmd !== "serverinfo" && !allowedUsers.includes(interaction.user.id)) {
-      return interaction.editReply("❌ No permission");
+    // reply immediately (NO STUCK)
+    if (isPublic) {
+      await interaction.reply({ content: "⏳ Loading...", ephemeral: false });
+    } else {
+      await interaction.reply({ content: "⏳ CRP Management is thinking...", ephemeral: true });
     }
 
+    const allowed = allowedUsers.includes(interaction.user.id);
     const user = interaction.options.getUser("user");
     const member = user ? await interaction.guild.members.fetch(user.id).catch(()=>null) : null;
+
+    if (!isPublic && !allowed) {
+      return interaction.editReply("❌ No permission");
+    }
 
     // ===== SERVER INFO =====
     if (cmd === "serverinfo") {
@@ -166,15 +137,18 @@ client.on("interactionCreate", async (interaction) => {
             .setImage("https://i.imgur.com/JeZR5OO.jpg")
             .setDescription(`👋 Welcome to City Role Play!
 
-🎭 Pick your role: Police, Criminal, Business, Citizen
+🎭 Police | Criminal | Business
 
 📜 Follow rules & enjoy RP
 
-🚀 Build your own story in the city!
-
-💬 Need help? Ask staff anytime`)
+🚀 Build your story`)
+            .setColor("Blue")
         ]
       });
+    }
+
+    if (cmd === "ping") {
+      return interaction.editReply("🏓 Pong!");
     }
 
     // ===== ANNOUNCE =====
@@ -182,8 +156,8 @@ client.on("interactionCreate", async (interaction) => {
       const msg = interaction.options.getString("message");
       const channel = interaction.options.getChannel("channel") || interaction.channel;
 
-      await channel.send(msg);
-      return interaction.editReply("📤 Announcement sent");
+      await channel.send(msg); // PUBLIC
+      return interaction.editReply("📤 Announcement sent"); // PRIVATE
     }
 
     // ===== WARN =====
@@ -196,7 +170,7 @@ client.on("interactionCreate", async (interaction) => {
       data.history.push({ reason, date: new Date().toLocaleString() });
 
       if (data.warns >= 3) {
-        await member.timeout(86400000);
+        await member.timeout(86400000, "3 warns");
         await interaction.channel.send(`🚫 <@${member.id}> got 3 warns → 24h timeout`);
         data.warns = 0;
         data.history = [];
@@ -211,29 +185,36 @@ client.on("interactionCreate", async (interaction) => {
     // ===== KICK =====
     if (cmd === "kick") {
       const reason = interaction.options.getString("reason");
+
       await member.kick(reason);
       await interaction.channel.send(`🦶 <@${member.id}> has been kicked\nReason: ${reason}`);
+
       return interaction.editReply("✅ Kicked");
     }
 
     // ===== BAN =====
     if (cmd === "ban") {
       const reason = interaction.options.getString("reason");
+
       await member.ban({ reason });
-      await interaction.channel.send(`🔨 <@${member.id}> has been banned\nReason: ${reason}`);
+      await interaction.channel.send(`🔨 <@${member.id}> banned\nReason: ${reason}`);
+
       return interaction.editReply("✅ Banned");
     }
 
     // ===== PURGE =====
     if (cmd === "purge") {
       const amount = interaction.options.getInteger("amount");
+
       await interaction.channel.bulkDelete(amount, true);
       return interaction.editReply(`🧹 Deleted ${amount} messages`);
     }
 
   } catch (err) {
     console.error(err);
-    return interaction.editReply("❌ Error");
+    if (!interaction.replied) {
+      interaction.reply({ content: "❌ Error", ephemeral: true });
+    }
   }
 });
 
@@ -242,7 +223,7 @@ client.on("messageCreate", msg => {
   if (msg.author.bot) return;
 
   if (["hi","hello","hey"].includes(msg.content.toLowerCase())) {
-    msg.reply(`👋 Greetings, ${msg.author.username} Welcome to CRP`);
+    msg.reply(`👋 Greetings, ${msg.author.username}! Welcome to CRP 🌆`);
   }
 });
 
