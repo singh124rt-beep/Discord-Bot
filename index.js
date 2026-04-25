@@ -69,7 +69,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("serverinfo")
-    .setDescription("Show server information"),
+    .setDescription("Show server info"),
 
   new SlashCommandBuilder()
     .setName("announce")
@@ -89,7 +89,6 @@ const commands = [
     .setName("ticketpanel")
     .setDescription("Send ticket panel"),
 
-  // ===== MOD =====
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick a user")
@@ -119,11 +118,11 @@ const commands = [
     .setDescription("Timeout a user")
     .addUserOption(o =>
       o.setName("user")
-        .setDescription("User to timeout")
+        .setDescription("User")
         .setRequired(true))
     .addIntegerOption(o =>
       o.setName("time")
-        .setDescription("Time in minutes")
+        .setDescription("Minutes")
         .setRequired(true))
     .addStringOption(o =>
       o.setName("reason")
@@ -142,12 +141,12 @@ const commands = [
     .setDescription("Delete messages")
     .addIntegerOption(o =>
       o.setName("amount")
-        .setDescription("Number of messages")
+        .setDescription("Number")
         .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("warn")
-    .setDescription("Warn a user")
+    .setDescription("Warn user")
     .addUserOption(o =>
       o.setName("user")
         .setDescription("User")
@@ -161,9 +160,17 @@ const commands = [
 
 // ===== READY =====
 client.once("clientReady", async () => {
+
+  console.log(`✅ Logged in as ${client.user.tag}`);
+
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
-  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-  console.log("Bot Ready");
+
+  await rest.put(
+    Routes.applicationCommands(client.user.id),
+    { body: commands }
+  );
+
+  console.log("🚀 Commands synced");
 });
 
 // ===== INTERACTIONS =====
@@ -187,6 +194,7 @@ client.on("interactionCreate", async (i) => {
 
   // ===== CREATE TICKET =====
   if (i.isStringSelectMenu()) {
+
     const channel = await i.guild.channels.create({
       name: `ticket-${i.user.username}`,
       parent: TICKET_CATEGORY,
@@ -202,7 +210,10 @@ client.on("interactionCreate", async (i) => {
       new ButtonBuilder().setCustomId("close").setLabel("Close").setStyle(ButtonStyle.Danger)
     );
 
-    channel.send({ content: `🎟️ Ticket by <@${i.user.id}>`, components: [buttons] });
+    channel.send({
+      content: `🎟️ Ticket created by <@${i.user.id}>`,
+      components: [buttons]
+    });
 
     return i.reply({ content: `Created: ${channel}`, ephemeral: true });
   }
@@ -219,6 +230,7 @@ client.on("interactionCreate", async (i) => {
 
     if (i.customId === "close") {
       const file = await transcripts.createTranscript(i.channel);
+
       const log = i.guild.channels.cache.get(LOG_CHANNEL);
       if (log) log.send({ files: [file] });
 
@@ -266,7 +278,9 @@ client.on("interactionCreate", async (i) => {
   // ===== UNTIMEOUT =====
   if (i.commandName === "untimeout") {
     await member.timeout(null);
+
     i.channel.send(`✅ ${user.tag} timeout removed`);
+
     return i.editReply("Removed");
   }
 
