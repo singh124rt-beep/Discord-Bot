@@ -43,22 +43,16 @@ const client = new Client({
   ]
 });
 
-// ================= LOG =================
+// ================= SAFE LOG =================
 function log(guild, title, desc) {
   const ch = guild.channels.cache.get(LOG_CHANNEL);
   if (!ch) return;
-
   ch.send({
-    embeds: [
-      new EmbedBuilder()
-        .setTitle(title)
-        .setDescription(desc)
-        .setColor(0xff0000)
-    ]
+    embeds: [new EmbedBuilder().setTitle(title).setDescription(desc).setColor(0xff0000)]
   }).catch(() => {});
 }
 
-// ================= GREETING =================
+// ================= GREETINGS =================
 client.on("guildMemberAdd", (member) => {
   const ch = member.guild.systemChannel;
   if (ch) ch.send(`👋 Greetings, ${member.user.username} Welcome to CRP`);
@@ -137,19 +131,26 @@ const commands = [
     .setDescription("Show warns"),
 
   new SlashCommandBuilder()
-    .setName("warninfo")
-    .setDescription("Warn info")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("unwarn")
-    .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
     .setName("clearwarn")
-    .setDescription("Clear all warns")
+    .setDescription("Clear warns")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  // ================= MULTI ROLE =================
+  new SlashCommandBuilder()
+    .setName("addrole")
+    .setDescription("Add multiple roles")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
+    .addRoleOption(o => o.setName("role2").setDescription("Role"))
+    .addRoleOption(o => o.setName("role3").setDescription("Role")),
+
+  new SlashCommandBuilder()
+    .setName("removerole")
+    .setDescription("Remove multiple roles")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
+    .addRoleOption(o => o.setName("role2").setDescription("Role"))
+    .addRoleOption(o => o.setName("role3").setDescription("Role"))
 
 ].map(c => c.toJSON());
 
@@ -172,12 +173,18 @@ client.on("interactionCreate", async (i) => {
 
   try {
 
+    if (i.isChatInputCommand() || i.isButton()) {
+      if (!i.deferred && !i.replied) {
+        await i.deferReply().catch(() => {});
+      }
+    }
+
     // ================= TICKET =================
     if (i.isChatInputCommand() && i.commandName === "ticketpanel") {
 
       const embed = new EmbedBuilder()
         .setTitle("🎟️ Ticket System")
-        .setDescription("Click below to open ticket")
+        .setDescription("Click button to create ticket")
         .setColor(0x2b2d31);
 
       const row = new ActionRowBuilder().addComponents(
@@ -187,7 +194,7 @@ client.on("interactionCreate", async (i) => {
           .setStyle(ButtonStyle.Success)
       );
 
-      return i.reply({ embeds: [embed], components: [row] });
+      return i.editReply({ embeds: [embed], components: [row] });
     }
 
     if (i.isButton() && i.customId === "create_ticket") {
@@ -204,18 +211,13 @@ client.on("interactionCreate", async (i) => {
 
       const embed = new EmbedBuilder()
         .setTitle("🎫 Ticket Opened")
-        .setDescription(`Hello <@${i.user.id}> explain your issue`)
+        .setDescription(`Hello <@${i.user.id}> describe your issue`)
         .setColor(0x00aaff);
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("close").setLabel("Close").setStyle(ButtonStyle.Danger)
-      );
+      await channel.send({ embeds: [embed] });
 
-      await channel.send({ embeds: [embed], components: [row] });
-
-      return i.reply({
-        content: "🎟️ Ticket Created Successfully",
-        ephemeral: true
+      return i.editReply({
+        content: "🎟️ Ticket Created Successfully"
       });
     }
 
@@ -242,26 +244,24 @@ client.on("interactionCreate", async (i) => {
 
       i.channel.send(`⚠️ ${user.tag} warned (${data.warns}/3)`);
 
-      if (data.warns >= 3) {
+      if (data.warns >= 3 && member) {
         await member.timeout(86400000);
         data.warns = 0;
         await data.save();
       }
 
-      return i.reply({ content: "Warn issued", ephemeral: true });
+      return i.editReply("Warn issued");
     }
 
     // ================= WARNLIST =================
     if (i.commandName === "warnlist") {
-
       const all = await Warn.find();
 
-      return i.reply({
-        content: all.length
+      return i.editReply(
+        all.length
           ? all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n")
-          : "No warns",
-        ephemeral: true
-      });
+          : "No warns"
+      );
     }
 
     // ================= CLEARWARN =================
@@ -269,22 +269,42 @@ client.on("interactionCreate", async (i) => {
 
       let data = await Warn.findOne({ userId: user.id });
 
-      if (!data) return i.reply({ content: "No warns", ephemeral: true });
+      if (!data) return i.editReply("No warns");
 
       data.warns = 0;
       await data.save();
 
       i.channel.send(`🧹 ${user.tag} warns cleared`);
+      log(i.guild, "Warn Cleared", `${user.tag}`);
 
-      return i.reply({ content: "Cleared", ephemeral: true });
+      return i.editReply("Cleared");
+    }
+
+    // ================= ADD ROLE =================
+    if (i.commandName === "addrole") {
+      const roles = ["role1", "role2", "role3"]
+        .map(r => i.options.getRole(r))
+        .filter(Boolean);
+
+      for (const r of roles) await member.roles.add(r);
+
+      return i.editReply("Roles added");
+    }
+
+    // ================= REMOVE ROLE =================
+    if (i.commandName === "removerole") {
+      const roles = ["role1", "role2", "role3"]
+        .map(r => i.options.getRole(r))
+        .filter(Boolean);
+
+      for (const r of roles) await member.roles.remove(r);
+
+      return i.editReply("Roles removed");
     }
 
   } catch (err) {
     console.error(err);
-
-    if (!i.replied) {
-      i.reply({ content: "Error occurred", ephemeral: true }).catch(() => {});
-    }
+    if (i.deferred) return i.editReply("Error occurred").catch(() => {});
   }
 });
 
