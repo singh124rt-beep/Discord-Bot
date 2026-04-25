@@ -1,6 +1,7 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const OpenAI = require("openai");
+
 const {
   Client,
   GatewayIntentBits,
@@ -43,8 +44,8 @@ const Warn = mongoose.model("Warn", new mongoose.Schema({
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.MessageContent
   ]
 });
@@ -56,12 +57,14 @@ const allowedUsers = [
   "1420063137838923868"
 ];
 
-const purgeRoleId = "1390273593040048220";
-
 // ===== COMMANDS =====
 const commands = [
 
   new SlashCommandBuilder().setName("ping").setDescription("Ping"),
+
+  new SlashCommandBuilder()
+    .setName("serverinfo")
+    .setDescription("Show server info"),
 
   new SlashCommandBuilder()
     .setName("announce")
@@ -69,8 +72,6 @@ const commands = [
     .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
     .addChannelOption(o => o.setName("channel").setDescription("Channel"))
     .addStringOption(o => o.setName("image").setDescription("Image URL")),
-
-  new SlashCommandBuilder().setName("serverinfo").setDescription("Show server info"),
 
   new SlashCommandBuilder()
     .setName("warn")
@@ -80,19 +81,19 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("unwarn")
-    .setDescription("Remove one warn")
+    .setDescription("Remove warn")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("clearwarn")
-    .setDescription("Clear all warns")
+    .setDescription("Clear warns")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder().setName("warnlist").setDescription("Show warned users"),
+  new SlashCommandBuilder().setName("warnlist").setDescription("Warn list"),
 
   new SlashCommandBuilder()
     .setName("warninfo")
-    .setDescription("Show warn history")
+    .setDescription("Warn history")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
@@ -111,7 +112,8 @@ const commands = [
     .setName("timeout")
     .setDescription("Timeout user")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true)),
+    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("untimeout")
@@ -121,21 +123,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("addrole")
-    .setDescription("Add roles")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
-    .addRoleOption(o => o.setName("role2").setDescription("Role 2")),
-
-  new SlashCommandBuilder()
-    .setName("removerole")
-    .setDescription("Remove roles")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role 1").setRequired(true))
-    .addRoleOption(o => o.setName("role2").setDescription("Role 2"))
+    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true))
 
 ].map(c => c.toJSON());
 
@@ -154,21 +142,22 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   const cmd = interaction.commandName;
-  const publicCmds = ["serverinfo"];
-
-  await interaction.deferReply({ ephemeral: !publicCmds.includes(cmd) });
 
   try {
-    const allowed = allowedUsers.includes(interaction.user.id);
+    const isPublic = cmd === "serverinfo";
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ ephemeral: !isPublic });
+    }
+
     const user = interaction.options.getUser("user");
     const member = user ? await interaction.guild.members.fetch(user.id).catch(()=>null) : null;
 
-    if (cmd !== "serverinfo" && !allowed) {
-      return interaction.editReply("❌ No permission");
+    // ===== PING =====
+    if (cmd === "ping") {
+      return interaction.editReply("🏓 Pong!");
     }
 
-    if (cmd === "ping") return interaction.editReply("🏓 Pong!");
-
+    // ===== SERVER INFO =====
     if (cmd === "serverinfo") {
       return interaction.editReply({
         embeds: [
@@ -187,27 +176,22 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    // ===== WARN LIST FIX =====
-    if (cmd === "warnlist") {
-      const all = await Warn.find({ warns: { $gt: 0 } });
-      if (!all.length) return interaction.editReply("No warned users");
-      return interaction.editReply(all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n"));
+    // ===== ANNOUNCE =====
+    if (cmd === "announce") {
+      const msg = interaction.options.getString("message");
+      const channel = interaction.options.getChannel("channel") || interaction.channel;
+
+      await channel.send(msg);
+      return interaction.editReply("📤 Announcement sent");
     }
 
-    if (cmd === "warninfo") {
-      const data = await Warn.findOne({ userId: member.id });
-      if (!data || !data.history.length) return interaction.editReply("No history");
-
-      return interaction.editReply(
-        data.history.map((h,i)=>`${i+1}. ${h.reason} (${h.date})`).join("\n")
-      );
-    }
-
+    // ===== WARN =====
     if (cmd === "warn") {
+      const reason = interaction.options.getString("reason");
+
       let data = await Warn.findOne({ userId: member.id }) || new Warn({ userId: member.id });
 
       data.warns++;
-      data.history.push({ reason: interaction.options.getString("reason"), date: new Date().toLocaleString() });
 
       if (data.warns >= 3) {
         await member.timeout(86400000);
@@ -215,11 +199,25 @@ client.on("interactionCreate", async (interaction) => {
         data.warns = 0;
         data.history = [];
       } else {
-        await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)`);
+        await interaction.channel.send(`⚠️ <@${member.id}> warned (${data.warns}/3)\nReason: ${reason}`);
       }
 
+      data.history.push({ reason, date: new Date().toLocaleString() });
       await data.save();
+
       return interaction.editReply("✅ Warn added");
+    }
+
+    if (cmd === "warnlist") {
+      const data = await Warn.find({ warns: { $gt: 0 } });
+      return interaction.editReply(data.map(d => `<@${d.userId}> → ${d.warns}/3`).join("\n") || "No warns");
+    }
+
+    if (cmd === "warninfo") {
+      const data = await Warn.findOne({ userId: user.id });
+      if (!data) return interaction.editReply("No history");
+
+      return interaction.editReply(data.history.map((h,i)=>`${i+1}. ${h.reason}`).join("\n"));
     }
 
     if (cmd === "unwarn") {
@@ -230,46 +228,78 @@ client.on("interactionCreate", async (interaction) => {
       data.history.pop();
       await data.save();
 
-      await interaction.channel.send(`✅ <@${member.id}> warn removed (${data.warns}/3)`);
+      await interaction.channel.send(`✅ <@${member.id}> warning removed`);
       return interaction.editReply("Done");
     }
 
     if (cmd === "clearwarn") {
       await Warn.deleteOne({ userId: member.id });
-      await interaction.channel.send(`🧹 <@${member.id}> warns cleared`);
+      await interaction.channel.send(`🧹 <@${member.id}> warnings cleared`);
       return interaction.editReply("Done");
+    }
+
+    if (cmd === "kick") {
+      const reason = interaction.options.getString("reason");
+      await member.kick(reason);
+      await interaction.channel.send(`🦶 <@${member.id}> kicked\nReason: ${reason}`);
+      return interaction.editReply("✅ Kicked");
+    }
+
+    if (cmd === "ban") {
+      const reason = interaction.options.getString("reason");
+      await member.ban({ reason });
+      await interaction.channel.send(`🔨 <@${member.id}> banned\nReason: ${reason}`);
+      return interaction.editReply("✅ Banned");
+    }
+
+    if (cmd === "timeout") {
+      const duration = interaction.options.getInteger("duration");
+      await member.timeout(duration * 60000);
+      return interaction.editReply("✅ Timeout applied");
+    }
+
+    if (cmd === "untimeout") {
+      await member.timeout(null);
+      return interaction.editReply("✅ Timeout removed");
+    }
+
+    if (cmd === "purge") {
+      const amount = interaction.options.getInteger("amount");
+      await interaction.channel.bulkDelete(amount, true);
+      return interaction.editReply(`🧹 Deleted ${amount}`);
     }
 
   } catch (err) {
     console.error(err);
-    interaction.editReply("❌ Error");
+    if (!interaction.replied) {
+      interaction.editReply("❌ Error");
+    }
   }
 });
 
 // ===== SINGLE MESSAGE HANDLER (FIXED DOUBLE REPLY) =====
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
+client.on("messageCreate", async (msg) => {
+  if (msg.author.bot) return;
 
-  // Greeting
-  if (["hi","hello","hey"].includes(message.content.toLowerCase())) {
-    return message.reply(`👋 Greetings, ${message.author.username}! Welcome to CRP 🌆`);
+  // greeting
+  if (["hi","hello","hey"].includes(msg.content.toLowerCase())) {
+    return msg.reply(`👋 Greetings, ${msg.author.username}! Welcome to CRP 🌆`);
   }
 
   // AI
-  if (!ai) return;
-  if (!message.mentions.has(client.user)) return;
+  if (ai && msg.mentions.has(client.user)) {
+    try {
+      const prompt = msg.content.replace(/<@!?\d+>/g, "").trim();
 
-  try {
-    const prompt = message.content.replace(/<@!?\d+>/g, "").trim();
+      const res = await ai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }]
+      });
 
-    const res = await ai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }]
-    });
-
-    message.reply(res.choices[0].message.content.slice(0, 2000));
-  } catch {
-    message.reply("⚠️ AI error (check API key)");
+      return msg.reply(res.choices[0].message.content.slice(0, 2000));
+    } catch {
+      return msg.reply("⚠️ AI error (check API key)");
+    }
   }
 });
 
