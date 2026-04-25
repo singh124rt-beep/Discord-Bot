@@ -55,7 +55,7 @@ function log(guild, title, desc) {
         .setDescription(desc)
         .setColor(0xff0000)
     ]
-  });
+  }).catch(() => {});
 }
 
 // ================= GREETING =================
@@ -96,9 +96,7 @@ const commands = [
     .addChannelOption(o => o.setName("channel").setDescription("Channel"))
     .addStringOption(o => o.setName("image").setDescription("Image URL")),
 
-  new SlashCommandBuilder()
-    .setName("ticketpanel")
-    .setDescription("Open ticket panel"),
+  new SlashCommandBuilder().setName("ticketpanel").setDescription("Open ticket panel"),
 
   new SlashCommandBuilder()
     .setName("kick")
@@ -136,16 +134,16 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("warnlist")
-    .setDescription("Show all warned users"),
+    .setDescription("Show warns"),
 
   new SlashCommandBuilder()
     .setName("warninfo")
-    .setDescription("User warn info")
+    .setDescription("Warn info")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("unwarn")
-    .setDescription("Remove one warn")
+    .setDescription("Remove warn")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
@@ -166,136 +164,128 @@ client.once("ready", async () => {
     { body: commands }
   );
 
-  console.log("Commands synced");
+  console.log("Commands loaded");
 });
 
 // ================= INTERACTIONS =================
 client.on("interactionCreate", async (i) => {
 
-  // ================= TICKET PANEL =================
-  if (i.isChatInputCommand() && i.commandName === "ticketpanel") {
+  try {
 
-    const embed = new EmbedBuilder()
-      .setTitle("🎟️ CRP TICKET SYSTEM")
-      .setDescription("Click below to open a private ticket")
-      .setColor(0x2b2d31);
+    // ================= TICKET =================
+    if (i.isChatInputCommand() && i.commandName === "ticketpanel") {
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("create_ticket")
-        .setLabel("Create Ticket")
-        .setStyle(ButtonStyle.Success)
-    );
+      const embed = new EmbedBuilder()
+        .setTitle("🎟️ Ticket System")
+        .setDescription("Click below to open ticket")
+        .setColor(0x2b2d31);
 
-    return i.reply({ embeds: [embed], components: [row] });
-  }
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("create_ticket")
+          .setLabel("Create Ticket")
+          .setStyle(ButtonStyle.Success)
+      );
 
-  // ================= CREATE TICKET =================
-  if (i.isButton() && i.customId === "create_ticket") {
-
-    const channel = await i.guild.channels.create({
-      name: `ticket-${i.user.username}`,
-      parent: TICKET_CATEGORY,
-      permissionOverwrites: [
-        { id: i.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: i.user.id, allow: [PermissionsBitField.Flags.ViewChannel] },
-        { id: STAFF_ROLE, allow: [PermissionsBitField.Flags.ViewChannel] }
-      ]
-    });
-
-    const embed = new EmbedBuilder()
-      .setTitle("🎫 Ticket Created")
-      .setDescription(`Hello <@${i.user.id}> explain your issue`)
-      .setColor(0x00aaff);
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("claim").setLabel("Claim").setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId("close").setLabel("Close").setStyle(ButtonStyle.Danger)
-    );
-
-    await channel.send({ embeds: [embed], components: [row] });
-
-    // ✅ ONLY PRIVATE RESPONSE (as you wanted)
-    return i.reply({
-      content: `🎟️ Ticket created: ${channel}`,
-      ephemeral: true
-    });
-  }
-
-  // ================= BUTTONS =================
-  if (i.isButton()) {
-
-    if (i.customId === "claim") {
-      return i.reply({ content: `Claimed by ${i.user.tag}` });
+      return i.reply({ embeds: [embed], components: [row] });
     }
 
-    if (i.customId === "close") {
-      const file = await transcripts.createTranscript(i.channel);
+    if (i.isButton() && i.customId === "create_ticket") {
 
+      const channel = await i.guild.channels.create({
+        name: `ticket-${i.user.username}`,
+        parent: TICKET_CATEGORY,
+        permissionOverwrites: [
+          { id: i.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+          { id: i.user.id, allow: [PermissionsBitField.Flags.ViewChannel] },
+          { id: STAFF_ROLE, allow: [PermissionsBitField.Flags.ViewChannel] }
+        ]
+      });
+
+      const embed = new EmbedBuilder()
+        .setTitle("🎫 Ticket Opened")
+        .setDescription(`Hello <@${i.user.id}> explain your issue`)
+        .setColor(0x00aaff);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("close").setLabel("Close").setStyle(ButtonStyle.Danger)
+      );
+
+      await channel.send({ embeds: [embed], components: [row] });
+
+      return i.reply({
+        content: "🎟️ Ticket Created Successfully",
+        ephemeral: true
+      });
+    }
+
+    if (i.isButton() && i.customId === "close") {
+      const file = await transcripts.createTranscript(i.channel);
       const logCh = i.guild.channels.cache.get(LOG_CHANNEL);
       if (logCh) logCh.send({ files: [file] });
 
       return i.channel.delete();
     }
-  }
 
-  // ================= SLASH COMMANDS =================
-  if (!i.isChatInputCommand()) return;
+    if (!i.isChatInputCommand()) return;
 
-  const user = i.options.getUser("user");
-  const member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
+    const user = i.options.getUser("user");
+    const member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
 
-  // WARN
-  if (i.commandName === "warn") {
+    // ================= WARN =================
+    if (i.commandName === "warn") {
 
-    let data = await Warn.findOne({ userId: user.id }) || new Warn({ userId: user.id });
+      let data = await Warn.findOne({ userId: user.id }) || new Warn({ userId: user.id });
 
-    data.warns++;
-    await data.save();
+      data.warns++;
+      await data.save();
 
-    i.channel.send(`⚠️ ${user.tag} warned (${data.warns}/3)`);
+      i.channel.send(`⚠️ ${user.tag} warned (${data.warns}/3)`);
 
-    if (data.warns >= 3) {
-      await member.timeout(86400000);
+      if (data.warns >= 3) {
+        await member.timeout(86400000);
+        data.warns = 0;
+        await data.save();
+      }
+
+      return i.reply({ content: "Warn issued", ephemeral: true });
+    }
+
+    // ================= WARNLIST =================
+    if (i.commandName === "warnlist") {
+
+      const all = await Warn.find();
+
+      return i.reply({
+        content: all.length
+          ? all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n")
+          : "No warns",
+        ephemeral: true
+      });
+    }
+
+    // ================= CLEARWARN =================
+    if (i.commandName === "clearwarn") {
+
+      let data = await Warn.findOne({ userId: user.id });
+
+      if (!data) return i.reply({ content: "No warns", ephemeral: true });
+
       data.warns = 0;
       await data.save();
+
+      i.channel.send(`🧹 ${user.tag} warns cleared`);
+
+      return i.reply({ content: "Cleared", ephemeral: true });
     }
 
-    return i.reply({ content: "Warn issued", ephemeral: true });
-  }
+  } catch (err) {
+    console.error(err);
 
-  // WARNLIST
-  if (i.commandName === "warnlist") {
-
-    const all = await Warn.find();
-
-    return i.reply({
-      content: all.length
-        ? all.map(w => `<@${w.userId}> → ${w.warns}/3`).join("\n")
-        : "No warned users",
-      ephemeral: true
-    });
-  }
-
-  // CLEARWARN
-  if (i.commandName === "clearwarn") {
-
-    let data = await Warn.findOne({ userId: user.id });
-
-    if (!data) {
-      return i.reply({ content: "User has no warns", ephemeral: true });
+    if (!i.replied) {
+      i.reply({ content: "Error occurred", ephemeral: true }).catch(() => {});
     }
-
-    data.warns = 0;
-    await data.save();
-
-    i.channel.send(`🧹 ${user.tag} warns cleared (0/3)`);
-
-    log(i.guild, "Warn Cleared", `${user.tag} cleared by ${i.user.tag}`);
-
-    return i.reply({ content: "Cleared", ephemeral: true });
   }
-
 });
 
 client.login(process.env.DISCORD_BOT_TOKEN);
