@@ -28,7 +28,8 @@ app.listen(3000);
 
 // ===== MONGO =====
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("Mongo Connected"));
+  .then(() => console.log("Mongo Connected"))
+  .catch(console.error);
 
 // ===== WARN DB =====
 const Warn = mongoose.model("Warn", new mongoose.Schema({
@@ -91,8 +92,14 @@ const commands = [
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
+    .addChannelOption(o =>
+      o.setName("channel").setDescription("Channel").setRequired(true)
+    )
     .addStringOption(o =>
       o.setName("message").setDescription("Message").setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("image").setDescription("Image URL").setRequired(false)
     ),
 
   new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
@@ -115,7 +122,8 @@ const commands = [
     .setName("timeout")
     .setDescription("Timeout user")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true)),
+    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(false)),
 
   new SlashCommandBuilder()
     .setName("untimeout")
@@ -127,29 +135,12 @@ const commands = [
     .setDescription("Delete messages")
     .addIntegerOption(o => o.setName("amount").setDescription("Count").setRequired(true)),
 
-  // WARN SYSTEM
+  // WARN
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder().setName("warnlist").setDescription("Show warns"),
-
-  new SlashCommandBuilder()
-    .setName("warninfo")
-    .setDescription("Warn info")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("unwarn")
-    .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("clearwarn")
-    .setDescription("Clear all warns")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
 
 ].map(c => c.toJSON());
 
@@ -170,7 +161,7 @@ client.once("clientReady", async () => {
 // ===== INTERACTIONS =====
 client.on("interactionCreate", async (i) => {
 
-  // ===== TICKET SYSTEM =====
+  // ===== TICKET MENU =====
   if (i.isStringSelectMenu() && i.customId === "ticket_select") {
 
     const channel = await i.guild.channels.create({
@@ -191,13 +182,13 @@ client.on("interactionCreate", async (i) => {
     );
 
     await channel.send({
-      content: `Ticket created by <@${i.user.id}>`,
+      content: `🎟️ Ticket created by <@${i.user.id}>`,
       components: [row]
     });
 
     await sendLog(i.guild, "🎟️ Ticket Created", `User: <@${i.user.id}>`, 0x00ff99);
 
-    return i.reply({ content: `Ticket: ${channel}`, ephemeral: true });
+    return i.reply({ content: `Ticket created: ${channel}`, ephemeral: true });
   }
 
   // ===== CLAIM =====
@@ -213,74 +204,113 @@ client.on("interactionCreate", async (i) => {
   const cmd = i.commandName;
   await i.deferReply({ ephemeral: true });
 
-  const member = i.options.getMember("user");
+  const user = i.options.getUser("user");
+  let member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
 
-  // ===== BASIC =====
-  if (cmd === "ping") return i.editReply("🏓 Pong");
+  try {
 
-  if (cmd === "serverinfo") {
-    return i.editReply({
-      embeds: [new EmbedBuilder().setTitle("City RP Server")]
-    });
+    if (cmd === "ping") return i.editReply("🏓 Pong");
+
+    if (cmd === "serverinfo") {
+      return i.editReply({ embeds: [new EmbedBuilder().setTitle("City RP Server")] });
+    }
+
+    if (cmd === "ticketpanel") {
+      const menu = new StringSelectMenuBuilder()
+        .setCustomId("ticket_select")
+        .setPlaceholder("Select ticket type")
+        .addOptions([
+          { label: "Support", value: "support" },
+          { label: "Report", value: "report" }
+        ]);
+
+      const row = new ActionRowBuilder().addComponents(menu);
+
+      await i.channel.send({ content: "🎟️ Create a ticket", components: [row] });
+
+      return i.editReply("Panel sent");
+    }
+
+    // ===== ANNOUNCE =====
+    if (cmd === "announce") {
+      const ch = i.options.getChannel("channel");
+      const msg = i.options.getString("message");
+      const img = i.options.getString("image");
+
+      const embed = new EmbedBuilder().setDescription(msg).setColor(0x00ffcc);
+      if (img) embed.setImage(img);
+
+      await ch.send({ embeds: [embed] });
+
+      return i.editReply("Sent");
+    }
+
+    // ===== KICK =====
+    if (cmd === "kick") {
+      const reason = i.options.getString("reason");
+      if (!member) return i.editReply("User not found");
+
+      await member.kick(reason);
+
+      await i.channel.send(`👢 **${user.tag} has been kicked**\n📄 Reason: ${reason}`);
+
+      return i.editReply("Kicked");
+    }
+
+    // ===== BAN =====
+    if (cmd === "ban") {
+      const reason = i.options.getString("reason");
+      if (!member) return i.editReply("User not found");
+
+      await member.ban({ reason });
+
+      await i.channel.send(`🔨 **${user.tag} has been banned**\n📄 Reason: ${reason}`);
+
+      return i.editReply("Banned");
+    }
+
+    // ===== TIMEOUT =====
+    if (cmd === "timeout") {
+      const time = i.options.getInteger("time");
+      const reason = i.options.getString("reason") || "No reason";
+
+      if (!member) return i.editReply("User not found");
+
+      await member.timeout(time * 60000, reason);
+
+      await i.channel.send(`⏱️ **${user.tag} timed out**\n⏳ ${time} min\n📄 ${reason}`);
+
+      return i.editReply("Timed out");
+    }
+
+    // ===== WARN =====
+    if (cmd === "warn") {
+      const reason = i.options.getString("reason");
+
+      let data = await Warn.findOne({ userId: user.id }) || new Warn({ userId: user.id, warns: 0, history: [] });
+
+      data.warns++;
+      data.history.push({ reason, date: new Date() });
+      await data.save();
+
+      await i.channel.send(`⚠️ **${user.tag} warned (${data.warns}/3)**\n📄 ${reason}`);
+
+      if (data.warns >= 3 && member) {
+        await member.timeout(24 * 60 * 60 * 1000);
+        await i.channel.send(`🚫 **${user.tag} got 24h timeout (3 warns)**`);
+        data.warns = 0;
+        data.history = [];
+        await data.save();
+      }
+
+      return i.editReply("Warned");
+    }
+
+  } catch (err) {
+    console.error(err);
+    return i.editReply("Error occurred");
   }
 
-  // ===== ANNOUNCE =====
-  if (cmd === "announce") {
-    i.channel.send(i.options.getString("message"));
-    return i.editReply("Sent");
-  }
-
-  // ===== MODERATION =====
-  if (cmd === "kick") {
-    await member.kick();
-
-    await sendLog(i.guild, "👢 Kick", `User: <@${member.id}>`, 0xffa500);
-    return i.editReply("Kicked");
-  }
-
-  if (cmd === "ban") {
-    await member.ban();
-
-    await sendLog(i.guild, "🔨 Ban", `User: <@${member.id}>`, 0xff0000);
-    return i.editReply("Banned");
-  }
-
-  if (cmd === "timeout") {
-    await member.timeout(i.options.getInteger("time") * 60000);
-
-    await sendLog(i.guild, "⏱️ Timeout", `User: <@${member.id}>`, 0xffff00);
-    return i.editReply("Timed out");
-  }
-
-  if (cmd === "untimeout") {
-    await member.timeout(null);
-    return i.editReply("Removed");
-  }
-
-  if (cmd === "purge") {
-    const amt = i.options.getInteger("amount");
-    await i.channel.bulkDelete(amt);
-
-    await sendLog(i.guild, "🧹 Purge", `Deleted: ${amt}`, 0x00bfff);
-    return i.editReply("Deleted");
-  }
-
-  // ===== WARN =====
-  if (cmd === "warn") {
-    const user = i.options.getUser("user");
-    const reason = i.options.getString("reason");
-
-    let data = await Warn.findOne({ userId: user.id }) || new Warn({ userId: user.id });
-
-    data.warns++;
-    data.history.push({ reason, date: new Date() });
-
-    await data.save();
-
-    await sendLog(i.guild, "⚠️ Warn", `User: <@${user.id}>\nReason: ${reason}`, 0xffff00);
-
-    return i.editReply(`Warned ${user.tag}`);
-  }
 });
 
 // ===== LOGIN =====
