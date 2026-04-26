@@ -17,7 +17,7 @@ const {
 
 // ================= CONFIG =================
 const STAFF_ROLE = "1390273593040048220";
-const TICKET_CATEGORY = "1404779580284829";
+const TICKET_CATEGORY = "1404779584829";
 const LOG_CHANNEL = "1375845745596305408";
 
 // ================= SERVER =================
@@ -35,15 +35,40 @@ const Warn = mongoose.model("Warn", new mongoose.Schema({
 
 // ================= CLIENT =================
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
-// ================= SAFE REPLY =================
-async function reply(i, msg, eph = true) {
-  if (i.deferred || i.replied) {
-    return i.followUp({ content: msg, ephemeral: eph });
+// ================= AUTO GREETINGS =================
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+
+  const msg = message.content.toLowerCase();
+
+  if (["hi", "hello", "hey"].includes(msg)) {
+    return message.reply(`👋 Greetings ${message.author.username} Welcome to CRP`);
   }
-  return i.reply({ content: msg, ephemeral: eph });
+});
+
+// ================= WARN CHECK =================
+async function checkWarn(member, userId, channel) {
+  let data = await Warn.findOne({ userId });
+
+  if (!data) return;
+
+  if (data.warns >= 3) {
+
+    data.warns = 0;
+    await data.save();
+
+    await member.timeout(24 * 60 * 60 * 1000, "Auto 3 Warns Timeout");
+
+    channel.send(`⛔ <@${userId}> auto timed out for 24 hours (3 warns)`);
+  }
 }
 
 // ================= COMMANDS =================
@@ -52,18 +77,15 @@ const commands = [
   new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
   new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
 
-  // ANNOUNCE
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
     .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
     .addChannelOption(o => o.setName("channel").setDescription("Channel")),
 
-  // TICKET
   new SlashCommandBuilder().setName("ticketpanel").setDescription("Open ticket panel"),
   new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
 
-  // MODERATION
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
@@ -87,7 +109,6 @@ const commands = [
     .setDescription("Remove timeout")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
-  // WARN SYSTEM
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
@@ -104,13 +125,16 @@ const commands = [
     .setDescription("Clear warns")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
-  // PURGE
+  new SlashCommandBuilder()
+    .setName("warnlist")
+    .setDescription("Check warn history")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
     .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true)),
 
-  // ROLES
   new SlashCommandBuilder()
     .setName("addrole")
     .setDescription("Add roles")
@@ -141,7 +165,7 @@ client.once("ready", async () => {
     { body: commands }
   );
 
-  console.log("✅ Commands loaded successfully");
+  console.log("Commands loaded");
 });
 
 // ================= INTERACTIONS =================
@@ -150,77 +174,18 @@ client.on("interactionCreate", async (i) => {
   try {
 
     if (i.isChatInputCommand()) {
-      await i.deferReply({ ephemeral: true });
+      await i.deferReply({ ephemeral: true }).catch(() => {});
     }
 
     const user = i.options?.getUser("user");
     const member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
 
-    // ================= TICKET PANEL =================
-    if (i.commandName === "ticketpanel") {
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("create_ticket")
-          .setLabel("Create Ticket")
-          .setStyle(ButtonStyle.Success)
-      );
-
-      return reply(i, "🎟 Ticket panel opened", true);
-    }
-
-    // ================= CREATE TICKET =================
-    if (i.isButton() && i.customId === "create_ticket") {
-
-      const channel = await i.guild.channels.create({
-        name: `ticket-${i.user.username}`,
-        parent: TICKET_CATEGORY,
-        permissionOverwrites: [
-          { id: i.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: i.user.id, allow: [PermissionsBitField.Flags.ViewChannel] },
-          { id: STAFF_ROLE, allow: [PermissionsBitField.Flags.ViewChannel] }
-        ]
-      });
-
-      const embed = new EmbedBuilder()
-        .setTitle("🎫 Ticket Opened")
-        .setDescription(`User: <@${i.user.id}>\nStatus: Open`)
-        .setColor(0x00aaff);
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("close_ticket")
-          .setLabel("Close Ticket")
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      await channel.send({ embeds: [embed], components: [row] });
-
-      return i.reply({
-        content: "🎟 Ticket Created 🎫 only you can view this",
-        ephemeral: true
-      });
-    }
-
-    // ================= CLOSE BUTTON =================
-    if (i.isButton() && i.customId === "close_ticket") {
-
-      const file = await transcripts.createTranscript(i.channel);
-
-      const log = i.guild.channels.cache.get(LOG_CHANNEL);
-      if (log) log.send({ files: [file] });
-
-      return i.channel.delete();
-    }
-
     // ================= ANNOUNCE =================
     if (i.commandName === "announce") {
-
       const msg = i.options.getString("message");
       const ch = i.options.getChannel("channel") || i.channel;
 
       await ch.send(msg);
-
       return i.editReply("📤 Announcement sent");
     }
 
@@ -232,16 +197,52 @@ client.on("interactionCreate", async (i) => {
       data.warns++;
       await data.save();
 
-      i.channel.send(`⚠️ ${user.tag} warned (${data.warns}/3)`);
+      try {
+        await user.send(`⚠️ Warn Issued\nReason: ${i.options.getString("reason")}\nWarns: ${data.warns}/3`);
+      } catch {}
+
+      await checkWarn(member, user.id, i.channel);
 
       return i.editReply("Warn issued");
     }
 
-    // ================= PURGE =================
-    if (i.commandName === "purge") {
-      const amount = i.options.getInteger("amount");
-      await i.channel.bulkDelete(amount, true);
-      return i.editReply(`Deleted ${amount} messages`);
+    // ================= WARNLIST =================
+    if (i.commandName === "warnlist") {
+
+      let data = await Warn.findOne({ userId: user.id });
+
+      const count = data ? data.warns : 0;
+
+      const embed = new EmbedBuilder()
+        .setTitle("⚠️ Warn History")
+        .setColor(0xffcc00)
+        .setDescription(`👤 User: ${user}\n⚠️ Warns: ${count}/3`);
+
+      return i.editReply({ embeds: [embed] });
+    }
+
+    // ================= KICK =================
+    if (i.commandName === "kick") {
+      const reason = i.options.getString("reason");
+
+      try {
+        await user.send(`👢 Kicked\nReason: ${reason}`);
+      } catch {}
+
+      await member.kick(reason);
+      return i.editReply("Kicked");
+    }
+
+    // ================= BAN =================
+    if (i.commandName === "ban") {
+      const reason = i.options.getString("reason");
+
+      try {
+        await user.send(`🔨 Banned\nReason: ${reason}`);
+      } catch {}
+
+      await member.ban({ reason });
+      return i.editReply("Banned");
     }
 
     // ================= TIMEOUT =================
@@ -250,10 +251,16 @@ client.on("interactionCreate", async (i) => {
       return i.editReply("Timed out");
     }
 
-    // ================= UNTIMEOUT =================
     if (i.commandName === "untimeout") {
       await member.timeout(null);
       return i.editReply("Timeout removed");
+    }
+
+    // ================= PURGE =================
+    if (i.commandName === "purge") {
+      const amount = i.options.getInteger("amount");
+      await i.channel.bulkDelete(amount, true);
+      return i.editReply("Deleted messages");
     }
 
     // ================= ROLES =================
@@ -277,4 +284,5 @@ client.on("interactionCreate", async (i) => {
   }
 });
 
+// ================= LOGIN =================
 client.login(process.env.DISCORD_BOT_TOKEN);
