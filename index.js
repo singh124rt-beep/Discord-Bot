@@ -25,7 +25,7 @@ const app = express();
 app.get("/", (_, res) => res.send("Bot Running"));
 app.listen(3000);
 
-// ================= MONGO =================
+// ================= DB =================
 mongoose.connect(process.env.MONGO_URI);
 
 const Warn = mongoose.model("Warn", new mongoose.Schema({
@@ -43,7 +43,7 @@ const client = new Client({
   ]
 });
 
-// ================= SAFE LOG =================
+// ================= LOG =================
 function log(guild, title, desc) {
   const ch = guild.channels.cache.get(LOG_CHANNEL);
   if (!ch) return;
@@ -58,31 +58,13 @@ client.on("guildMemberAdd", (member) => {
   if (ch) ch.send(`👋 Greetings, ${member.user.username} Welcome to CRP`);
 });
 
-// ================= SPAM =================
-const spam = new Map();
-
-client.on("messageCreate", async (msg) => {
-  if (msg.author.bot) return;
-
-  const data = spam.get(msg.author.id) || { c: 0, t: Date.now() };
-
-  if (Date.now() - data.t < 4000) {
-    data.c++;
-    if (data.c >= 5) {
-      await msg.member.timeout(600000).catch(() => {});
-      spam.delete(msg.author.id);
-    }
-  } else {
-    spam.set(msg.author.id, { c: 1, t: Date.now() });
-  }
-});
-
 // ================= COMMANDS =================
 const commands = [
 
   new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
   new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
 
+  // ================= ANNOUNCE =================
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
@@ -90,8 +72,11 @@ const commands = [
     .addChannelOption(o => o.setName("channel").setDescription("Channel"))
     .addStringOption(o => o.setName("image").setDescription("Image URL")),
 
+  // ================= TICKET =================
   new SlashCommandBuilder().setName("ticketpanel").setDescription("Open ticket panel"),
+  new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
 
+  // ================= MODERATION =================
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
@@ -115,11 +100,7 @@ const commands = [
     .setDescription("Remove timeout")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("purge")
-    .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true)),
-
+  // ================= WARN SYSTEM =================
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
@@ -128,12 +109,23 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("warnlist")
-    .setDescription("Show warns"),
+    .setDescription("Show all warns"),
+
+  new SlashCommandBuilder()
+    .setName("unwarn")
+    .setDescription("Remove one warn")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("clearwarn")
-    .setDescription("Clear warns")
+    .setDescription("Clear all warns")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  // ================= PURGE =================
+  new SlashCommandBuilder()
+    .setName("purge")
+    .setDescription("Delete messages")
+    .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true)),
 
   // ================= MULTI ROLE =================
   new SlashCommandBuilder()
@@ -173,18 +165,20 @@ client.on("interactionCreate", async (i) => {
 
   try {
 
-    if (i.isChatInputCommand() || i.isButton()) {
-      if (!i.deferred && !i.replied) {
-        await i.deferReply().catch(() => {});
-      }
+    // always ACK fast → prevents "did not respond"
+    if (!i.replied && !i.deferred) {
+      await i.deferReply().catch(() => {});
     }
 
-    // ================= TICKET =================
+    const user = i.options?.getUser("user");
+    const member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
+
+    // ================= TICKET PANEL =================
     if (i.isChatInputCommand() && i.commandName === "ticketpanel") {
 
       const embed = new EmbedBuilder()
         .setTitle("🎟️ Ticket System")
-        .setDescription("Click button to create ticket")
+        .setDescription("Click below to create ticket")
         .setColor(0x2b2d31);
 
       const row = new ActionRowBuilder().addComponents(
@@ -197,6 +191,7 @@ client.on("interactionCreate", async (i) => {
       return i.editReply({ embeds: [embed], components: [row] });
     }
 
+    // ================= CREATE TICKET =================
     if (i.isButton() && i.customId === "create_ticket") {
 
       const channel = await i.guild.channels.create({
@@ -211,17 +206,26 @@ client.on("interactionCreate", async (i) => {
 
       const embed = new EmbedBuilder()
         .setTitle("🎫 Ticket Opened")
-        .setDescription(`Hello <@${i.user.id}> describe your issue`)
+        .setDescription(`Hello <@${i.user.id}> explain your issue`)
         .setColor(0x00aaff);
 
-      await channel.send({ embeds: [embed] });
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("close_ticket")
+          .setLabel("Close Ticket")
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await channel.send({ embeds: [embed], components: [row] });
 
       return i.editReply({
-        content: "🎟️ Ticket Created Successfully"
+        content: `🎟️ Ticket Created: ${channel}`
       });
     }
 
-    if (i.isButton() && i.customId === "close") {
+    // ================= CLOSE BUTTON =================
+    if (i.isButton() && i.customId === "close_ticket") {
+
       const file = await transcripts.createTranscript(i.channel);
       const logCh = i.guild.channels.cache.get(LOG_CHANNEL);
       if (logCh) logCh.send({ files: [file] });
@@ -229,10 +233,28 @@ client.on("interactionCreate", async (i) => {
       return i.channel.delete();
     }
 
-    if (!i.isChatInputCommand()) return;
+    // ================= CLOSE COMMAND =================
+    if (i.commandName === "close") {
 
-    const user = i.options.getUser("user");
-    const member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
+      const file = await transcripts.createTranscript(i.channel);
+      const logCh = i.guild.channels.cache.get(LOG_CHANNEL);
+      if (logCh) logCh.send({ files: [file] });
+
+      await i.editReply("Closing ticket...");
+      return setTimeout(() => i.channel.delete(), 1500);
+    }
+
+    // ================= ANNOUNCE =================
+    if (i.commandName === "announce") {
+      const msg = i.options.getString("message");
+      const ch = i.options.getChannel("channel") || i.channel;
+      const img = i.options.getString("image");
+
+      await ch.send({ content: msg });
+      if (img) await ch.send({ content: img });
+
+      return i.editReply("Announcement sent");
+    }
 
     // ================= WARN =================
     if (i.commandName === "warn") {
@@ -255,6 +277,7 @@ client.on("interactionCreate", async (i) => {
 
     // ================= WARNLIST =================
     if (i.commandName === "warnlist") {
+
       const all = await Warn.find();
 
       return i.editReply(
@@ -275,7 +298,6 @@ client.on("interactionCreate", async (i) => {
       await data.save();
 
       i.channel.send(`🧹 ${user.tag} warns cleared`);
-      log(i.guild, "Warn Cleared", `${user.tag}`);
 
       return i.editReply("Cleared");
     }
@@ -304,7 +326,9 @@ client.on("interactionCreate", async (i) => {
 
   } catch (err) {
     console.error(err);
-    if (i.deferred) return i.editReply("Error occurred").catch(() => {});
+    if (!i.replied) {
+      i.reply({ content: "Error occurred", ephemeral: true }).catch(() => {});
+    }
   }
 });
 
