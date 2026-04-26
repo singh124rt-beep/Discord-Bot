@@ -24,7 +24,6 @@ const STAFF_ROLE = "1390273593040048220";
 const TICKET_CATEGORY = "1404779580283424829";
 const LOG_CHANNEL = "1375845745596305408";
 
-// ✅ YOUR IDS
 const ALLOWED_USERS = [
   "1420063137838923868",
   "1378368132376297514",
@@ -63,7 +62,7 @@ client.on("messageCreate", (m) => {
 });
 
 // ===== SAFE REPLY =====
-async function safeReply(i, msg) {
+async function reply(i, msg) {
   try {
     if (i.replied || i.deferred) {
       return i.followUp({ content: msg, ephemeral: true });
@@ -73,19 +72,17 @@ async function safeReply(i, msg) {
   } catch {}
 }
 
-// ===== PERMISSION SYSTEM =====
-function isAllowedUser(i) {
+// ===== PERMISSIONS =====
+function isAllowed(i){
   return ALLOWED_USERS.includes(i.user.id);
 }
 
-function isAdmin(i) {
-  return i.member.permissions.has(PermissionsBitField.Flags.Administrator);
+function hasStaffRole(i){
+  return i.member.roles.cache.has(STAFF_ROLE);
 }
 
 // ===== WARN AUTO =====
 async function checkWarn(member, userId, channel) {
-  if (!member) return;
-
   let data = await Warn.findOne({ userId });
   if (!data) return;
 
@@ -93,10 +90,8 @@ async function checkWarn(member, userId, channel) {
     data.warns = 0;
     await data.save();
 
-    try {
-      await member.timeout(24 * 60 * 60 * 1000, "3 warns auto timeout");
-      channel.send(`⛔ <@${userId}> auto timeout (24h)`);
-    } catch {}
+    await member.timeout(24*60*60*1000, "3 warns auto timeout");
+    channel.send(`⛔ <@${userId}> auto timeout (24h)`);
   }
 }
 
@@ -147,12 +142,12 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("unwarn")
-    .setDescription("Remove 1 warn")
+    .setDescription("Remove warn")
     .addUserOption(o=>o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("clearwarn")
-    .setDescription("Clear all warns")
+    .setDescription("Clear warns")
     .addUserOption(o=>o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
@@ -184,7 +179,7 @@ const commands = [
 ].map(c=>c.toJSON());
 
 // ===== READY =====
-client.once("clientReady", async () => {
+client.once("clientReady", async ()=>{
   console.log("🟢 Logged in as " + client.user.tag);
 
   const rest = new REST({version:"10"}).setToken(process.env.DISCORD_BOT_TOKEN);
@@ -198,27 +193,14 @@ client.on("interactionCreate", async (i)=>{
   try {
 
     if (i.isChatInputCommand()) {
-      try { await i.deferReply({ephemeral:true}); } catch {}
+      await i.deferReply({ephemeral:true});
     }
 
-    // ===== PERMISSION LOGIC =====
-    if (i.isChatInputCommand()) {
-
-      const name = i.commandName;
-
-      // ticketpanel + purge → allowed OR admin
-      if (["ticketpanel","purge"].includes(name)) {
-        if (!isAllowedUser(i) && !isAdmin(i)) {
-          return safeReply(i,"❌ Not allowed");
-        }
-      }
-
-      // ALL OTHER COMMANDS → ONLY allowed users
-      else {
-        if (!isAllowedUser(i)) {
-          return safeReply(i,"❌ Only allowed users can use this");
-        }
-      }
+    // ===== PERMISSIONS =====
+    if (i.commandName === "ticketpanel" || i.commandName === "close") {
+      if (!hasStaffRole(i)) return reply(i,"❌ Only staff can use this");
+    } else {
+      if (!isAllowed(i)) return reply(i,"❌ Not allowed");
     }
 
     const user = i.options?.getUser("user");
@@ -230,51 +212,98 @@ client.on("interactionCreate", async (i)=>{
       const ch=i.options.getChannel("channel")||i.channel;
       const img=i.options.getAttachment("image");
 
-      const embed=new EmbedBuilder().setDescription(msg);
-      if(img) embed.setImage(img.url);
+      await ch.send(msg);
+      if(img){
+        const embed=new EmbedBuilder().setImage(img.url);
+        await ch.send({embeds:[embed]});
+      }
 
-      await ch.send({embeds:[embed]});
-      return safeReply(i,"📤 Announcement sent");
+      return reply(i,"📤 Announcement sent");
+    }
+
+    // ===== WARN =====
+    if(i.commandName==="warn"){
+      let data=await Warn.findOne({userId:user.id})||new Warn({userId:user.id});
+      data.warns++; await data.save();
+
+      i.channel.send(`⚠️ ${user} warned (${data.warns}/3)`);
+
+      try{await user.send(`⚠️ Warn\nReason: ${i.options.getString("reason")}`);}catch{}
+
+      await checkWarn(member,user.id,i.channel);
+      return reply(i,"Warn issued");
+    }
+
+    if(i.commandName==="warnlist"){
+      let data=await Warn.findOne({userId:user.id});
+      return reply(i,`Warns: ${data?data.warns:0}/3`);
+    }
+
+    if(i.commandName==="clearwarn"){
+      await Warn.deleteOne({userId:user.id});
+      return reply(i,"Warns cleared");
     }
 
     // ===== PURGE =====
     if(i.commandName==="purge"){
       await i.channel.bulkDelete(i.options.getInteger("amount"),true);
-      return safeReply(i,"Messages deleted");
+      return reply(i,"Deleted");
     }
 
     // ===== TICKET PANEL =====
     if(i.commandName==="ticketpanel"){
       const row=new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("create_ticket").setLabel("Create Ticket").setStyle(ButtonStyle.Success)
+        new ButtonBuilder()
+          .setCustomId("create_ticket")
+          .setLabel("Create Ticket")
+          .setStyle(ButtonStyle.Success)
       );
-      await i.channel.send({content:"🎫 Open a ticket",components:[row]});
-      return safeReply(i,"Panel sent");
+
+      await i.channel.send({content:"🎫 Open ticket",components:[row]});
+      return reply(i,"Panel sent");
     }
 
-    // ===== BUTTON =====
-    if(i.isButton() && i.customId==="create_ticket"){
-      const ch=await i.guild.channels.create({
-        name:`ticket-${i.user.username}`,
-        parent:TICKET_CATEGORY,
-        permissionOverwrites:[
-          {id:i.guild.id,deny:[PermissionsBitField.Flags.ViewChannel]},
-          {id:i.user.id,allow:[PermissionsBitField.Flags.ViewChannel]},
-          {id:STAFF_ROLE,allow:[PermissionsBitField.Flags.ViewChannel]}
-        ]
-      });
+    // ===== BUTTONS =====
+    if(i.isButton()){
+      if(i.customId==="create_ticket"){
 
-      const row=new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("close_ticket").setLabel("Close").setStyle(ButtonStyle.Danger)
-      );
+        const ch=await i.guild.channels.create({
+          name:`ticket-${i.user.username}`,
+          parent:TICKET_CATEGORY,
+          permissionOverwrites:[
+            {id:i.guild.id,deny:[PermissionsBitField.Flags.ViewChannel]},
+            {id:i.user.id,allow:[PermissionsBitField.Flags.ViewChannel]},
+            {id:STAFF_ROLE,allow:[PermissionsBitField.Flags.ViewChannel]}
+          ]
+        });
 
-      await ch.send({content:`🎫 Ticket created by <@${i.user.id}>`,components:[row]});
-      return safeReply(i,"🎫 Ticket Created");
+        const row=new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId("close_ticket")
+            .setLabel("Close Ticket")
+            .setStyle(ButtonStyle.Danger)
+        );
+
+        await ch.send({content:`🎫 Ticket by <@${i.user.id}>`,components:[row]});
+
+        return i.reply({content:"🎫 Ticket Created",ephemeral:true});
+      }
+
+      if(i.customId==="close_ticket"){
+        await i.deferReply({ephemeral:true});
+
+        const file=await transcripts.createTranscript(i.channel);
+        const log=i.guild.channels.cache.get(LOG_CHANNEL);
+        if(log) await log.send({files:[file]});
+
+        await i.editReply("Closing ticket...");
+        setTimeout(()=>i.channel.delete().catch(()=>{}),2000);
+      }
     }
 
   } catch(err){
     console.error(err);
-    safeReply(i,"Error occurred");
+    reply(i,"Error occurred");
   }
 });
 
