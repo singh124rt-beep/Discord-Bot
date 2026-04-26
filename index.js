@@ -17,10 +17,10 @@ const {
 
 // ================= CONFIG =================
 const STAFF_ROLE = "1390273593040048220";
-const TICKET_CATEGORY = "1404779580283424829";
+const TICKET_CATEGORY = "1404779580284829";
 const LOG_CHANNEL = "1375845745596305408";
 
-// ================= EXPRESS =================
+// ================= SERVER =================
 const app = express();
 app.get("/", (_, res) => res.send("Bot Running"));
 app.listen(3000);
@@ -49,38 +49,30 @@ async function reply(i, msg, eph = true) {
 // ================= COMMANDS =================
 const commands = [
 
-  new SlashCommandBuilder()
-    .setName("ping")
-    .setDescription("Check bot status"),
+  new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
+  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
 
-  new SlashCommandBuilder()
-    .setName("serverinfo")
-    .setDescription("Show server info"),
-
+  // ANNOUNCE
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
     .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").setDescription("Target channel"))
-    .addStringOption(o => o.setName("image").setDescription("Image URL")),
+    .addChannelOption(o => o.setName("channel").setDescription("Channel")),
 
-  new SlashCommandBuilder()
-    .setName("ticketpanel")
-    .setDescription("Open ticket panel"),
+  // TICKET
+  new SlashCommandBuilder().setName("ticketpanel").setDescription("Open ticket panel"),
+  new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
 
-  new SlashCommandBuilder()
-    .setName("close")
-    .setDescription("Close ticket"),
-
+  // MODERATION
   new SlashCommandBuilder()
     .setName("kick")
-    .setDescription("Kick a user")
+    .setDescription("Kick user")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
-    .setDescription("Ban a user")
+    .setDescription("Ban user")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
@@ -95,6 +87,7 @@ const commands = [
     .setDescription("Remove timeout")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
+  // WARN SYSTEM
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
@@ -103,34 +96,36 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("unwarn")
-    .setDescription("Remove 1 warn")
+    .setDescription("Remove warn")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("clearwarn")
-    .setDescription("Clear all warns")
+    .setDescription("Clear warns")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
+  // PURGE
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
     .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true)),
 
+  // ROLES
   new SlashCommandBuilder()
     .setName("addrole")
-    .setDescription("Add multiple roles")
+    .setDescription("Add roles")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
-    .addRoleOption(o => o.setName("role2").setDescription("Role"))
-    .addRoleOption(o => o.setName("role3").setDescription("Role")),
+    .addRoleOption(o => o.setName("role1").setRequired(true))
+    .addRoleOption(o => o.setName("role2"))
+    .addRoleOption(o => o.setName("role3")),
 
   new SlashCommandBuilder()
     .setName("removerole")
-    .setDescription("Remove multiple roles")
+    .setDescription("Remove roles")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addRoleOption(o => o.setName("role1").setDescription("Role").setRequired(true))
-    .addRoleOption(o => o.setName("role2").setDescription("Role"))
-    .addRoleOption(o => o.setName("role3").setDescription("Role"))
+    .addRoleOption(o => o.setName("role1").setRequired(true))
+    .addRoleOption(o => o.setName("role2"))
+    .addRoleOption(o => o.setName("role3"))
 
 ].map(c => c.toJSON());
 
@@ -189,7 +184,7 @@ client.on("interactionCreate", async (i) => {
 
       const embed = new EmbedBuilder()
         .setTitle("🎫 Ticket Opened")
-        .setDescription("Staff will assist you soon")
+        .setDescription(`User: <@${i.user.id}>\nStatus: Open`)
         .setColor(0x00aaff);
 
       const row = new ActionRowBuilder().addComponents(
@@ -223,12 +218,10 @@ client.on("interactionCreate", async (i) => {
 
       const msg = i.options.getString("message");
       const ch = i.options.getChannel("channel") || i.channel;
-      const img = i.options.getString("image");
 
       await ch.send(msg);
-      if (img) await ch.send(img);
 
-      return i.editReply("📤 Announcement sent (private)");
+      return i.editReply("📤 Announcement sent");
     }
 
     // ================= WARN =================
@@ -253,9 +246,8 @@ client.on("interactionCreate", async (i) => {
 
     // ================= TIMEOUT =================
     if (i.commandName === "timeout") {
-      const time = i.options.getInteger("time");
-      await member.timeout(time * 60000);
-      return i.editReply("User timed out");
+      await member.timeout(i.options.getInteger("time") * 60000);
+      return i.editReply("Timed out");
     }
 
     // ================= UNTIMEOUT =================
@@ -266,22 +258,14 @@ client.on("interactionCreate", async (i) => {
 
     // ================= ROLES =================
     if (i.commandName === "addrole") {
-      const roles = ["role1","role2","role3"]
-        .map(r => i.options.getRole(r))
-        .filter(Boolean);
-
+      const roles = ["role1","role2","role3"].map(r => i.options.getRole(r)).filter(Boolean);
       for (const r of roles) await member.roles.add(r);
-
       return i.editReply("Roles added");
     }
 
     if (i.commandName === "removerole") {
-      const roles = ["role1","role2","role3"]
-        .map(r => i.options.getRole(r))
-        .filter(Boolean);
-
+      const roles = ["role1","role2","role3"].map(r => i.options.getRole(r)).filter(Boolean);
       for (const r of roles) await member.roles.remove(r);
-
       return i.editReply("Roles removed");
     }
 
