@@ -22,7 +22,7 @@ process.on("uncaughtException", console.error);
 
 // ================= CONFIG =================
 const ADMIN_ROLE = "1390273593040048220";
-const TICKET_CATEGORY = "1404779580283424829";
+const TICKET_CATEGORY = "1404779580284829428";
 const LOG_CHANNEL = "1375845745596305408";
 
 const BLOCKED_USER = "1366502670788984902";
@@ -46,11 +46,6 @@ const Counter = mongoose.model("Counter", new mongoose.Schema({
   count: { type: Number, default: 0 }
 }));
 
-const Warn = mongoose.model("Warn", new mongoose.Schema({
-  userId: String,
-  warns: { type: Number, default: 0 }
-}));
-
 // ================= CLIENT =================
 const client = new Client({
   intents: [
@@ -69,74 +64,69 @@ function isAllowed(i) {
   );
 }
 
-// ================= COMMANDS =================
+// ================= COMMANDS (FIXED - NO MISSING DESCRIPTION) =================
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Bot ping"),
-  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
+  new SlashCommandBuilder()
+    .setName("ping")
+    .setDescription("Check bot latency"),
+
+  new SlashCommandBuilder()
+    .setName("serverinfo")
+    .setDescription("Show server info"),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
-    .addChannelOption(o => o.setName("channel").setDescription("Channel"))
-    .addAttachmentOption(o => o.setName("image1"))
-    .addAttachmentOption(o => o.setName("image2"))
-    .addAttachmentOption(o => o.setName("image3"))
-    .addAttachmentOption(o => o.setName("video1"))
-    .addAttachmentOption(o => o.setName("video2")),
+    .addStringOption(o =>
+      o.setName("message").setDescription("Announcement message").setRequired(true)
+    )
+    .addChannelOption(o =>
+      o.setName("channel").setDescription("Target channel")
+    )
+    .addAttachmentOption(o =>
+      o.setName("image1").setDescription("Image 1")
+    )
+    .addAttachmentOption(o =>
+      o.setName("image2").setDescription("Image 2")
+    )
+    .addAttachmentOption(o =>
+      o.setName("image3").setDescription("Image 3")
+    )
+    .addAttachmentOption(o =>
+      o.setName("video1").setDescription("Video 1")
+    )
+    .addAttachmentOption(o =>
+      o.setName("video2").setDescription("Video 2")
+    ),
 
-  new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
-  new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
+  new SlashCommandBuilder()
+    .setName("ticketpanel")
+    .setDescription("Create ticket panel"),
+
+  new SlashCommandBuilder()
+    .setName("close")
+    .setDescription("Close ticket"),
 
   new SlashCommandBuilder()
     .setName("kick")
-    .setDescription("Kick user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .setDescription("Kick a user")
+    .addUserOption(o =>
+      o.setName("user").setDescription("User to kick").setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("reason").setDescription("Reason").setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("ban")
-    .setDescription("Ban user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("warn")
-    .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("unwarn")
-    .setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("clearwarn")
-    .setDescription("Clear warns")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("warnlist")
-    .setDescription("Warn list of all users"),
-
-  new SlashCommandBuilder()
-    .setName("purge")
-    .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setDescription("Messages").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("addrole")
-    .setDescription("Add role")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addRoleOption(o => o.setName("role").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("removerole")
-    .setDescription("Remove role")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addRoleOption(o => o.setName("role").setRequired(true))
+    .setDescription("Ban a user")
+    .addUserOption(o =>
+      o.setName("user").setDescription("User to ban").setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("reason").setDescription("Reason").setRequired(true)
+    )
 
 ].map(c => c.toJSON());
 
@@ -153,7 +143,7 @@ client.once("ready", async () => {
   console.log("✅ Commands loaded");
 });
 
-// ================= INTERACTION =================
+// ================= INTERACTIONS =================
 client.on("interactionCreate", async (i) => {
   try {
 
@@ -196,19 +186,19 @@ client.on("interactionCreate", async (i) => {
       );
 
       await i.channel.send({
-        content: "🎟️ To open a ticket click below 👇",
+        content: "🎟️ Click below to open ticket",
         components: [btn]
       });
 
-      return i.editReply("📤 Panel Sent");
+      return i.editReply("📤 Sent");
     }
 
-    // ================= OPEN TICKET =================
+    // ================= OPEN =================
     if (i.isButton() && i.customId === "open_ticket") {
 
       const menu = new StringSelectMenuBuilder()
         .setCustomId("ticket_type")
-        .setPlaceholder("Select Type")
+        .setPlaceholder("Select type")
         .addOptions([
           { label: "Support", value: "Support" },
           { label: "Report", value: "Report" },
@@ -222,7 +212,7 @@ client.on("interactionCreate", async (i) => {
       });
     }
 
-    // ================= CREATE TICKET =================
+    // ================= CREATE =================
     if (i.isStringSelectMenu() && i.customId === "ticket_type") {
 
       const counter = await Counter.findOneAndUpdate(
@@ -233,7 +223,7 @@ client.on("interactionCreate", async (i) => {
 
       const id = counter.count;
 
-      const channel = await i.guild.channels.create({
+      const ch = await i.guild.channels.create({
         name: `ticket-${id}`,
         parent: TICKET_CATEGORY,
         permissionOverwrites: [
@@ -250,7 +240,7 @@ client.on("interactionCreate", async (i) => {
           .setStyle(ButtonStyle.Danger)
       );
 
-      await channel.send({
+      await ch.send({
         content: `<@&${ADMIN_ROLE}>`,
         embeds: [
           new EmbedBuilder()
@@ -258,9 +248,8 @@ client.on("interactionCreate", async (i) => {
             .addFields(
               { name: "👤 Player", value: `<@${i.user.id}>` },
               { name: "🎫 Type", value: i.values[0] },
-              { name: "📄 Issue", value: "Describe your issue" }
+              { name: "📄 Issue", value: "Write your issue" }
             )
-            .setFooter({ text: "Our team will assist you shortly" })
         ],
         components: [closeBtn]
       });
@@ -273,7 +262,7 @@ client.on("interactionCreate", async (i) => {
       if (!isAllowed(i))
         return i.reply({ content: "❌ No permission", ephemeral: true });
 
-      await i.reply({ content: "🔒 Closing..." });
+      await i.reply("🔒 Closing...");
 
       const file = await transcripts.createTranscript(i.channel);
 
@@ -281,7 +270,7 @@ client.on("interactionCreate", async (i) => {
       if (log) {
         await log.send({
           files: [file],
-          content: `📁 Ticket closed: ${i.channel.name}`
+          content: `Ticket closed: ${i.channel.name}`
         });
       }
 
@@ -300,7 +289,7 @@ client.on("interactionCreate", async (i) => {
       if (log) {
         await log.send({
           files: [file],
-          content: `📁 Ticket closed: ${i.channel.name}`
+          content: `Ticket closed: ${i.channel.name}`
         });
       }
 
