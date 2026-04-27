@@ -1,4 +1,3 @@
-// ================= IMPORTS =================
 const express = require("express");
 const mongoose = require("mongoose");
 const transcripts = require("discord-html-transcripts");
@@ -17,7 +16,6 @@ const {
   StringSelectMenuBuilder
 } = require("discord.js");
 
-// ================= ERROR SAFETY =================
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
 
@@ -25,6 +23,7 @@ process.on("uncaughtException", console.error);
 const STAFF_ROLE = "1390273593040048220";
 const TICKET_CATEGORY = "1404779580283424829";
 const LOG_CHANNEL = "1375845745596305408";
+const TRANSCRIPT_CHANNEL = LOG_CHANNEL;
 
 const ALLOWED_USERS = [
   "1420063137838923868",
@@ -37,7 +36,7 @@ const app = express();
 app.get("/", (_, res) => res.send("Bot Running"));
 app.listen(3000);
 
-// ================= DATABASE =================
+// ================= DB =================
 mongoose.connect(process.env.MONGO_URI);
 
 const Warn = mongoose.model("Warn", new mongoose.Schema({
@@ -61,15 +60,23 @@ const client = new Client({
   ]
 });
 
-// ================= GREET =================
-client.on("messageCreate", (m) => {
-  if (m.author.bot) return;
-  if (["hi","hello","hey"].includes(m.content.toLowerCase())) {
-    m.reply(`👋 Welcome ${m.author.username}`);
-  }
-});
+// ================= ANTI SPAM =================
+const spam = new Map();
 
-// ================= PERMISSION =================
+function antiSpam(id) {
+  const now = Date.now();
+  const d = spam.get(id) || { count: 0, last: now };
+
+  if (now - d.last < 3000) d.count++;
+  else d.count = 1;
+
+  d.last = now;
+  spam.set(id, d);
+
+  return d.count > 5;
+}
+
+// ================= HELPERS =================
 function isAllowed(i) {
   return (
     ALLOWED_USERS.includes(i.user.id) ||
@@ -78,148 +85,173 @@ function isAllowed(i) {
   );
 }
 
-// ================= LOG =================
-function sendLog(guild, msg) {
+function log(guild, msg) {
   const ch = guild.channels.cache.get(LOG_CHANNEL);
-  if (ch) ch.send(msg).catch(()=>{});
-}
-
-// ================= WARN AUTO =================
-async function checkWarn(member, userId, channel, guild) {
-  let data = await Warn.findOne({ userId });
-  if (!data) return;
-
-  if (data.warns >= 3) {
-    data.warns = 0;
-    await data.save();
-
-    await member.timeout(24 * 60 * 60 * 1000, "3 warns auto");
-
-    channel.send(`⛔ <@${userId}> auto timeout (24h)`);
-    sendLog(guild, `Auto timeout: ${userId}`);
-  }
+  if (ch) ch.send(msg).catch(() => {});
 }
 
 // ================= COMMANDS =================
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Check bot"),
-
+  // BASIC
+  new SlashCommandBuilder().setName("ping").setDescription("Bot ping"),
   new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
 
+  // ANNOUNCE
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o=>o.setName("message").setRequired(true))
-    .addChannelOption(o=>o.setName("channel"))
-    .addAttachmentOption(o=>o.setName("image1"))
-    .addAttachmentOption(o=>o.setName("image2"))
-    .addAttachmentOption(o=>o.setName("image3"))
-    .addAttachmentOption(o=>o.setName("video1"))
-    .addAttachmentOption(o=>o.setName("video2")),
+    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
+    .addChannelOption(o => o.setName("channel").setDescription("Channel"))
+    .addAttachmentOption(o => o.setName("image1").setDescription("Image 1"))
+    .addAttachmentOption(o => o.setName("image2").setDescription("Image 2"))
+    .addAttachmentOption(o => o.setName("image3").setDescription("Image 3")),
 
-  new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
-  new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
-
+  // MODERATION
   new SlashCommandBuilder()
     .setName("kick")
-    .addUserOption(o=>o.setRequired(true))
-    .addStringOption(o=>o.setRequired(true)),
+    .setDescription("Kick user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
-    .addUserOption(o=>o.setRequired(true))
-    .addStringOption(o=>o.setRequired(true)),
+    .setDescription("Ban user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
-    .addUserOption(o=>o.setRequired(true))
-    .addIntegerOption(o=>o.setRequired(true))
-    .addStringOption(o=>o.setName("reason")),
+    .setDescription("Timeout user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason")),
 
   new SlashCommandBuilder()
     .setName("untimeout")
-    .addUserOption(o=>o.setRequired(true)),
+    .setDescription("Remove timeout")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
+  // WARN SYSTEM
   new SlashCommandBuilder()
     .setName("warn")
-    .addUserOption(o=>o.setRequired(true))
-    .addStringOption(o=>o.setRequired(true)),
-
-  new SlashCommandBuilder().setName("unwarn").addUserOption(o=>o.setRequired(true)),
-  new SlashCommandBuilder().setName("clearwarn").addUserOption(o=>o.setRequired(true)),
-  new SlashCommandBuilder().setName("warnlist").addUserOption(o=>o.setRequired(true)),
+    .setDescription("Warn user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
+    .setName("unwarn")
+    .setDescription("Remove warn")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("clearwarn")
+    .setDescription("Clear warns")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("warnlist")
+    .setDescription("Check warns")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  // UTIL
+  new SlashCommandBuilder()
     .setName("purge")
-    .addIntegerOption(o=>o.setRequired(true)),
+    .setDescription("Delete messages")
+    .addIntegerOption(o => o.setName("amount").setDescription("Count").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("addrole")
-    .addUserOption(o=>o.setRequired(true))
-    .addRoleOption(o=>o.setRequired(true)),
+    .setDescription("Add role")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("removerole")
-    .addUserOption(o=>o.setRequired(true))
-    .addRoleOption(o=>o.setRequired(true))
+    .setDescription("Remove role")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true)),
 
-].map(c=>c.toJSON());
+  // TICKET
+  new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
+  new SlashCommandBuilder().setName("close").setDescription("Close ticket")
+
+].map(c => c.toJSON());
 
 // ================= READY =================
-client.once("clientReady", async () => {
+client.once("ready", async () => {
   console.log(`🟢 Logged in as ${client.user.tag}`);
 
-  const rest = new REST({version:"10"}).setToken(process.env.DISCORD_BOT_TOKEN);
-  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+  const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
+
+  await rest.put(Routes.applicationCommands(client.user.id), {
+    body: commands
+  });
 
   console.log("✅ Commands loaded");
 });
 
 // ================= INTERACTION =================
-client.on("interactionCreate", async (i)=>{
+client.on("interactionCreate", async (i) => {
   try {
 
-    if (i.isChatInputCommand()) await i.deferReply({ephemeral:true});
+    if (i.isChatInputCommand()) await i.deferReply({ ephemeral: true });
 
     const user = i.options?.getUser("user");
-    const member = user ? await i.guild.members.fetch(user.id).catch(()=>null) : null;
+    const member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
 
-    // ===== ANNOUNCE =====
+    // ================= PING =================
+    if (i.commandName === "ping") {
+      return i.editReply(`🏓 ${client.ws.ping}ms`);
+    }
+
+    // ================= SERVERINFO =================
+    if (i.commandName === "serverinfo") {
+      const e = new EmbedBuilder()
+        .setTitle(i.guild.name)
+        .setDescription(`Members: ${i.guild.memberCount}`)
+        .setColor("Blue");
+
+      return i.editReply({ embeds: [e] });
+    }
+
+    // ================= ANNOUNCE =================
     if (i.commandName === "announce") {
-      if (!isAllowed(i)) return i.editReply("❌ Not allowed");
+      if (!isAllowed(i)) return i.editReply("❌ No permission");
 
       const msg = i.options.getString("message");
       const ch = i.options.getChannel("channel") || i.channel;
 
-      const files = [];
-      ["image1","image2","image3","video1","video2"].forEach(n=>{
-        const f = i.options.getAttachment(n);
-        if (f) files.push(f.url);
-      });
+      await ch.send({ content: msg });
+      log(i.guild, "Announcement sent");
 
-      await ch.send({ content: msg, files });
-      sendLog(i.guild, "Announcement sent");
-      return i.editReply("Done");
+      return i.editReply("Sent");
     }
 
-    // ===== WARN SYSTEM =====
+    // ================= WARN =================
     if (i.commandName === "warn") {
-      let data = await Warn.findOne({ userId: user.id }) || new Warn({ userId: user.id });
-      data.warns++; await data.save();
-
       const reason = i.options.getString("reason");
 
-      i.channel.send(`⚠️ ${user} warned (${data.warns}/3)\nReason: ${reason}`);
-      await checkWarn(member, user.id, i.channel, i.guild);
+      let d = await Warn.findOne({ userId: user.id }) || new Warn({ userId: user.id });
+      d.warns++;
+      await d.save();
+
+      i.channel.send(`⚠️ ${user} warned | ${reason}`);
+
+      if (d.warns >= 3) {
+        d.warns = 0;
+        await d.save();
+
+        await member.timeout(86400000, "Auto 3 warns");
+      }
 
       return i.editReply("Warned");
     }
 
     if (i.commandName === "unwarn") {
-      let data = await Warn.findOne({ userId: user.id });
-      if (data && data.warns > 0) data.warns--;
-      await data.save();
+      let d = await Warn.findOne({ userId: user.id });
+      if (d && d.warns > 0) d.warns--;
+      await d.save();
       return i.editReply("Removed 1 warn");
     }
 
@@ -229,13 +261,13 @@ client.on("interactionCreate", async (i)=>{
     }
 
     if (i.commandName === "warnlist") {
-      let data = await Warn.findOne({ userId: user.id });
-      return i.editReply(`Warns: ${data ? data.warns : 0}/3`);
+      let d = await Warn.findOne({ userId: user.id });
+      return i.editReply(`Warns: ${d ? d.warns : 0}`);
     }
 
-    // ===== TIMEOUT =====
+    // ================= TIMEOUT =================
     if (i.commandName === "timeout") {
-      await member.timeout(i.options.getInteger("time")*60000, i.options.getString("reason"));
+      await member.timeout(i.options.getInteger("time") * 60000, i.options.getString("reason"));
       return i.editReply("Timed out");
     }
 
@@ -244,9 +276,8 @@ client.on("interactionCreate", async (i)=>{
       return i.editReply("Removed timeout");
     }
 
-    // ===== TICKET PANEL =====
+    // ================= TICKET PANEL =================
     if (i.commandName === "ticketpanel") {
-      if (!isAllowed(i)) return i.editReply("❌ Not allowed");
 
       const menu = new StringSelectMenuBuilder()
         .setCustomId("ticket_select")
@@ -255,13 +286,13 @@ client.on("interactionCreate", async (i)=>{
           { label: "Report", value: "report" }
         ]);
 
-      const row = new ActionRowBuilder().addComponents(menu);
-
-      await i.channel.send({ content: "🎫 Create ticket", components:[row] });
-      return i.editReply("Done");
+      return i.channel.send({
+        content: "🎫 Open ticket",
+        components: [new ActionRowBuilder().addComponents(menu)]
+      });
     }
 
-    // ===== CREATE TICKET =====
+    // ================= CREATE TICKET =================
     if (i.isStringSelectMenu() && i.customId === "ticket_select") {
 
       const ch = await i.guild.channels.create({
@@ -276,21 +307,50 @@ client.on("interactionCreate", async (i)=>{
 
       await Ticket.create({ userId: i.user.id, channelId: ch.id });
 
-      await ch.send({
-        content: `<@&${STAFF_ROLE}>
+      const btn = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("claim")
+          .setLabel("Claim")
+          .setStyle(ButtonStyle.Success)
+      );
 
-🎫 New Ticket Opened
+      await ch.send({ content: "Ticket opened", components: [btn] });
 
-Name : ${i.user.username}
-Support : ${i.values[0]}
-Describe Your issue :`
-      });
-
-      return i.reply({ content: "Ticket created", ephemeral:true });
+      return i.reply({ content: "Created", ephemeral: true });
     }
 
-  } catch(e){
+    // ================= CLAIM =================
+    if (i.isButton() && i.customId === "claim") {
+      return i.update({
+        content: `Claimed by ${i.user}`,
+        components: []
+      });
+    }
+
+    // ================= CLOSE =================
+    if (i.commandName === "close") {
+
+      const file = await transcripts.createTranscript(i.channel);
+
+      const logCh = i.guild.channels.cache.get(TRANSCRIPT_CHANNEL);
+      if (logCh) logCh.send({ files: [file] });
+
+      await i.editReply("Closing...");
+      setTimeout(() => i.channel.delete(), 2000);
+    }
+
+  } catch (e) {
     console.error(e);
+  }
+});
+
+// ================= MESSAGE =================
+client.on("messageCreate", (m) => {
+  if (m.author.bot) return;
+
+  if (antiSpam(m.author.id)) {
+    m.delete().catch(() => {});
+    m.channel.send(`⚠️ ${m.author} stop spam`);
   }
 });
 
