@@ -1,4 +1,3 @@
-// ================= IMPORTS =================
 const express = require("express");
 const mongoose = require("mongoose");
 const transcripts = require("discord-html-transcripts");
@@ -23,25 +22,23 @@ process.on("uncaughtException", console.error);
 
 // ================= CONFIG =================
 const ADMIN_ROLE = "1390273593040048220";
-const STAFF_ROLE = "1390273593040048220";
-
-const TICKET_CATEGORY = "1404779580283424829";
-const LOG_CHANNEL = "1375845745596305408";
-
-const BLOCKED_USER = "1366502670788984902";
-
 const ALLOWED_USERS = [
   "1420063137838923868",
   "1378368132376297514",
   "1335285604476522529"
 ];
 
+const BLOCKED_USER = "1366502670788984902";
+
+const TICKET_CATEGORY = "1404779580283424829";
+const LOG_CHANNEL = "1375845745596305408";
+
 // ================= EXPRESS =================
 const app = express();
 app.get("/", (_, res) => res.send("Bot Running"));
 app.listen(3000);
 
-// ================= DB =================
+// ================= DATABASE =================
 mongoose.connect(process.env.MONGO_URI);
 
 const Warn = mongoose.model("Warn", new mongoose.Schema({
@@ -52,13 +49,6 @@ const Warn = mongoose.model("Warn", new mongoose.Schema({
 const TicketCounter = mongoose.model("TicketCounter", new mongoose.Schema({
   guildId: String,
   count: { type: Number, default: 0 }
-}));
-
-const Ticket = mongoose.model("Ticket", new mongoose.Schema({
-  userId: String,
-  channelId: String,
-  ticketId: Number,
-  type: String
 }));
 
 // ================= CLIENT =================
@@ -80,12 +70,6 @@ function isAllowed(i) {
   );
 }
 
-// ================= LOG =================
-function log(guild, msg) {
-  const ch = guild.channels.cache.get(LOG_CHANNEL);
-  if (ch) ch.send(msg).catch(() => {});
-}
-
 // ================= COMMANDS =================
 const commands = [
 
@@ -93,7 +77,7 @@ const commands = [
 
   new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
 
-  // ================= ANNOUNCEMENT (FIXED MULTI MEDIA) =================
+  // ================= ANNOUNCEMENT =================
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
@@ -134,7 +118,7 @@ const commands = [
     .setDescription("Remove timeout")
     .addUserOption(o => o.setName("user").setRequired(true)),
 
-  // ================= WARN SYSTEM =================
+  // ================= WARN =================
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
@@ -153,9 +137,9 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("warnlist")
-    .setDescription("Show ALL warns (global)"),
+    .setDescription("Show all warns"),
 
-  // ================= ROLE SYSTEM =================
+  // ================= ROLE =================
   new SlashCommandBuilder()
     .setName("addrole")
     .setDescription("Add role")
@@ -198,7 +182,7 @@ client.on("interactionCreate", async (i) => {
 
     if (i.isChatInputCommand()) await i.deferReply({ ephemeral: true });
 
-    // ================= ANNOUNCE FIXED =================
+    // ================= ANNOUNCE FIX =================
     if (i.commandName === "announce") {
       if (!isAllowed(i)) return i.editReply("❌ No permission");
 
@@ -206,10 +190,10 @@ client.on("interactionCreate", async (i) => {
       const ch = i.options.getChannel("channel") || i.channel;
 
       const files = [];
-      for (let k of ["image1","image2","image3","video1","video2"]) {
+      ["image1","image2","image3","video1","video2"].forEach(k => {
         const f = i.options.getAttachment(k);
         if (f) files.push(f.url);
-      }
+      });
 
       await ch.send({ content: msg, files });
       return i.editReply("📤 Sent");
@@ -238,7 +222,6 @@ client.on("interactionCreate", async (i) => {
 
       const menu = new StringSelectMenuBuilder()
         .setCustomId("ticket_select")
-        .setPlaceholder("Select type")
         .addOptions([
           { label: "Support", value: "Support" },
           { label: "Report", value: "Report" },
@@ -251,7 +234,7 @@ client.on("interactionCreate", async (i) => {
       });
     }
 
-    // ================= CREATE TICKET FIXED =================
+    // ================= CREATE TICKET =================
     if (i.isStringSelectMenu() && i.customId === "ticket_select") {
 
       await i.deferReply({ ephemeral: true });
@@ -270,15 +253,8 @@ client.on("interactionCreate", async (i) => {
         permissionOverwrites: [
           { id: i.guild.id, deny: ["ViewChannel"] },
           { id: i.user.id, allow: ["ViewChannel"] },
-          { id: STAFF_ROLE, allow: ["ViewChannel"] }
+          { id: ADMIN_ROLE, allow: ["ViewChannel"] }
         ]
-      });
-
-      await Ticket.create({
-        userId: i.user.id,
-        channelId: ch.id,
-        ticketId: id,
-        type: i.values[0]
       });
 
       await ch.send({
@@ -286,14 +262,13 @@ client.on("interactionCreate", async (i) => {
         embeds: [
           new EmbedBuilder()
             .setTitle(`🎫 Ticket #${id}`)
-            .setColor("Green")
             .setDescription(
 `Name: <@${i.user.id}>
 Type: ${i.values[0]}
 
 Describe your issue:
 
-Our team will assist you shortly`
+Our Team will assist you shortly`
             )
         ]
       });
@@ -306,9 +281,9 @@ Our team will assist you shortly`
       if (!isAllowed(i)) return i.editReply("❌ No permission");
 
       const file = await transcripts.createTranscript(i.channel);
-      const ch = i.guild.channels.cache.get(LOG_CHANNEL);
+      const log = i.guild.channels.cache.get(LOG_CHANNEL);
 
-      if (ch) ch.send({ files: [file] });
+      if (log) log.send({ files: [file] });
 
       await i.editReply("Closing...");
       setTimeout(() => i.channel.delete(), 2000);
