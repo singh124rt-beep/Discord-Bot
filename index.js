@@ -1,4 +1,3 @@
-// ================= IMPORTS =================
 const express = require("express");
 const mongoose = require("mongoose");
 const transcripts = require("discord-html-transcripts");
@@ -17,6 +16,7 @@ const {
   StringSelectMenuBuilder
 } = require("discord.js");
 
+// ================= SAFETY =================
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
 
@@ -26,6 +26,10 @@ const TICKET_CATEGORY = "1404779580283424829";
 const LOG_CHANNEL = "1375845745596305408";
 const TRANSCRIPT_CHANNEL = LOG_CHANNEL;
 
+// 🚫 BLOCKED USER
+const BLOCKED_USER = "1366502670788984902";
+
+// ALLOWED ADMINS
 const ALLOWED_USERS = [
   "1420063137838923868",
   "1378368132376297514",
@@ -40,13 +44,13 @@ app.listen(3000);
 // ================= DATABASE =================
 mongoose.connect(process.env.MONGO_URI);
 
-// Warn system
+// WARN SYSTEM
 const Warn = mongoose.model("Warn", new mongoose.Schema({
   userId: String,
   warns: { type: Number, default: 0 }
 }));
 
-// Ticket system (WITH AUTO ID)
+// TICKET COUNTER
 const TicketCounter = mongoose.model("TicketCounter", new mongoose.Schema({
   guildId: String,
   count: { type: Number, default: 0 }
@@ -55,7 +59,6 @@ const TicketCounter = mongoose.model("TicketCounter", new mongoose.Schema({
 const Ticket = mongoose.model("Ticket", new mongoose.Schema({
   userId: String,
   channelId: String,
-  claimedBy: String,
   ticketId: Number
 }));
 
@@ -74,15 +77,15 @@ const spam = new Map();
 
 function antiSpam(id) {
   const now = Date.now();
-  const data = spam.get(id) || { count: 0, last: now };
+  const d = spam.get(id) || { count: 0, last: now };
 
-  if (now - data.last < 3000) data.count++;
-  else data.count = 1;
+  if (now - d.last < 3000) d.count++;
+  else d.count = 1;
 
-  data.last = now;
-  spam.set(id, data);
+  d.last = now;
+  spam.set(id, d);
 
-  return data.count > 5;
+  return d.count > 5;
 }
 
 // ================= HELPERS =================
@@ -94,7 +97,6 @@ function isAllowed(i) {
   );
 }
 
-// ================= LOG =================
 function log(guild, msg) {
   const ch = guild.channels.cache.get(LOG_CHANNEL);
   if (ch) ch.send(msg).catch(() => {});
@@ -115,13 +117,8 @@ const commands = [
     .addAttachmentOption(o => o.setName("image2").setDescription("Image 2"))
     .addAttachmentOption(o => o.setName("image3").setDescription("Image 3")),
 
-  new SlashCommandBuilder()
-    .setName("ticketpanel")
-    .setDescription("Create ticket panel"),
-
-  new SlashCommandBuilder()
-    .setName("close")
-    .setDescription("Close ticket"),
+  new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
+  new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
 
   new SlashCommandBuilder()
     .setName("warn")
@@ -192,6 +189,14 @@ client.once("ready", async () => {
 client.on("interactionCreate", async (i) => {
   try {
 
+    // 🚫 BLOCKED USER CHECK
+    if (i.user.id === BLOCKED_USER) {
+      return i.reply({
+        content: "❌ You are not allowed to use this bot.",
+        ephemeral: true
+      });
+    }
+
     if (i.isChatInputCommand()) await i.deferReply({ ephemeral: true });
 
     const user = i.options?.getUser("user");
@@ -232,7 +237,7 @@ client.on("interactionCreate", async (i) => {
       return i.editReply("✅ Sent");
     }
 
-    // ================= TICKET PANEL (BUTTON) =================
+    // ================= TICKET PANEL =================
     if (i.commandName === "ticketpanel") {
 
       const embed = new EmbedBuilder()
@@ -269,7 +274,7 @@ client.on("interactionCreate", async (i) => {
       });
     }
 
-    // ================= CREATE TICKET + AUTO ID =================
+    // ================= CREATE TICKET + ID =================
     if (i.isStringSelectMenu() && i.customId === "ticket_select") {
 
       let counter = await TicketCounter.findOne({ guildId: i.guild.id });
@@ -326,16 +331,14 @@ client.on("interactionCreate", async (i) => {
       setTimeout(() => i.channel.delete(), 2000);
     }
 
-    // ================= ANTI SPAM =================
   } catch (e) {
     console.error(e);
   }
 });
 
-// ================= MESSAGE ANTI SPAM =================
+// ================= ANTI SPAM =================
 client.on("messageCreate", (m) => {
   if (m.author.bot) return;
-
   if (antiSpam(m.author.id)) {
     m.delete().catch(() => {});
     m.channel.send(`⚠️ ${m.author} stop spam`);
