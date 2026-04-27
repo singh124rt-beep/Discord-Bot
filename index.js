@@ -38,18 +38,17 @@ const app = express();
 app.get("/", (_, res) => res.send("Bot Running"));
 app.listen(3000);
 
-// ================= DATABASE =================
+// ================= DB =================
 mongoose.connect(process.env.MONGO_URI);
-
-const Warn = mongoose.model("Warn", new mongoose.Schema({
-  userId: String,
-  reason: String,
-  date: { type: Date, default: Date.now }
-}));
 
 const Counter = mongoose.model("Counter", new mongoose.Schema({
   guildId: String,
   count: { type: Number, default: 0 }
+}));
+
+const Warn = mongoose.model("Warn", new mongoose.Schema({
+  userId: String,
+  warns: { type: Number, default: 0 }
 }));
 
 // ================= CLIENT =================
@@ -73,128 +72,71 @@ function isAllowed(i) {
 // ================= COMMANDS =================
 const commands = [
 
-  new SlashCommandBuilder()
-    .setName("ping")
-    .setDescription("Check bot latency"),
-
-  new SlashCommandBuilder()
-    .setName("serverinfo")
-    .setDescription("Show server info"),
+  new SlashCommandBuilder().setName("ping").setDescription("Bot ping"),
+  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o =>
-      o.setName("message")
-        .setDescription("Announcement message")
-        .setRequired(true)
-    )
-    .addChannelOption(o =>
-      o.setName("channel")
-        .setDescription("Channel to send message")
-    )
-    .addAttachmentOption(o =>
-      o.setName("image1").setDescription("Image 1")
-    )
-    .addAttachmentOption(o =>
-      o.setName("image2").setDescription("Image 2")
-    )
-    .addAttachmentOption(o =>
-      o.setName("image3").setDescription("Image 3")
-    ),
+    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
+    .addChannelOption(o => o.setName("channel").setDescription("Channel"))
+    .addAttachmentOption(o => o.setName("image1"))
+    .addAttachmentOption(o => o.setName("image2"))
+    .addAttachmentOption(o => o.setName("image3"))
+    .addAttachmentOption(o => o.setName("video1"))
+    .addAttachmentOption(o => o.setName("video2")),
 
-  new SlashCommandBuilder()
-    .setName("ticketpanel")
-    .setDescription("Create ticket panel"),
-
-  new SlashCommandBuilder()
-    .setName("close")
-    .setDescription("Close ticket"),
-
-  new SlashCommandBuilder()
-    .setName("warn")
-    .setDescription("Warn user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("reason").setDescription("Reason").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("unwarn")
-    .setDescription("Remove one warn")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("clearwarn")
-    .setDescription("Clear all warns")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("warnlist")
-    .setDescription("Show warn history of all users"),
-
-  new SlashCommandBuilder()
-    .setName("timeout")
-    .setDescription("Timeout user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o.setName("time").setDescription("Minutes").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("untimeout")
-    .setDescription("Remove timeout")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)
-    ),
+  new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
+  new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Kick user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("reason").setDescription("Reason").setRequired(true)
-    ),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Ban user")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("reason").setDescription("Reason").setRequired(true)
-    ),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("warn")
+    .setDescription("Warn user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("unwarn")
+    .setDescription("Remove warn")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("clearwarn")
+    .setDescription("Clear warns")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("warnlist")
+    .setDescription("Warn list of all users"),
+
+  new SlashCommandBuilder()
+    .setName("purge")
+    .setDescription("Delete messages")
+    .addIntegerOption(o => o.setName("amount").setDescription("Messages").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("addrole")
     .setDescription("Add role")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)
-    )
-    .addRoleOption(o =>
-      o.setName("role").setDescription("Role").setRequired(true)
-    ),
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addRoleOption(o => o.setName("role").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("removerole")
     .setDescription("Remove role")
-    .addUserOption(o =>
-      o.setName("user").setDescription("User").setRequired(true)
-    )
-    .addRoleOption(o =>
-      o.setName("role").setDescription("Role").setRequired(true)
-    )
+    .addUserOption(o => o.setName("user").setRequired(true))
+    .addRoleOption(o => o.setName("role").setRequired(true))
 
 ].map(c => c.toJSON());
 
@@ -208,17 +150,18 @@ client.once("ready", async () => {
     body: commands
   });
 
-  console.log("✅ All commands loaded successfully");
+  console.log("✅ Commands loaded");
 });
 
-// ================= INTERACTIONS =================
+// ================= INTERACTION =================
 client.on("interactionCreate", async (i) => {
   try {
 
     if (i.user.id === BLOCKED_USER)
       return i.reply({ content: "❌ Blocked user", ephemeral: true });
 
-    if (i.isChatInputCommand()) await i.deferReply({ ephemeral: true });
+    if (i.isChatInputCommand())
+      await i.deferReply({ ephemeral: true });
 
     // ================= ANNOUNCE =================
     if (i.commandName === "announce") {
@@ -230,11 +173,14 @@ client.on("interactionCreate", async (i) => {
       const files = [];
       for (let x = 1; x <= 3; x++) {
         const img = i.options.getAttachment(`image${x}`);
-        if (img) files.push(img.url);
+        if (img) files.push(img);
+      }
+      for (let x = 1; x <= 2; x++) {
+        const vid = i.options.getAttachment(`video${x}`);
+        if (vid) files.push(vid);
       }
 
       await ch.send({ content: msg, files });
-
       return i.editReply("📤 Sent");
     }
 
@@ -242,18 +188,19 @@ client.on("interactionCreate", async (i) => {
     if (i.commandName === "ticketpanel") {
       if (!isAllowed(i)) return i.editReply("❌ No permission");
 
-      const embed = new EmbedBuilder()
-        .setTitle("🎟️ Create Ticket")
-        .setDescription("To open a ticket 🎟️ Click below 👇");
-
-      const row = new ActionRowBuilder().addComponents(
+      const btn = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId("open_ticket")
           .setLabel("Create Ticket")
           .setStyle(ButtonStyle.Primary)
       );
 
-      return i.channel.send({ embeds: [embed], components: [row] });
+      await i.channel.send({
+        content: "🎟️ To open a ticket click below 👇",
+        components: [btn]
+      });
+
+      return i.editReply("📤 Panel Sent");
     }
 
     // ================= OPEN TICKET =================
@@ -261,7 +208,7 @@ client.on("interactionCreate", async (i) => {
 
       const menu = new StringSelectMenuBuilder()
         .setCustomId("ticket_type")
-        .setPlaceholder("Select Ticket Type")
+        .setPlaceholder("Select Type")
         .addOptions([
           { label: "Support", value: "Support" },
           { label: "Report", value: "Report" },
@@ -296,26 +243,73 @@ client.on("interactionCreate", async (i) => {
         ]
       });
 
+      const closeBtn = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("close_ticket")
+          .setLabel("Close Ticket")
+          .setStyle(ButtonStyle.Danger)
+      );
+
       await channel.send({
         content: `<@&${ADMIN_ROLE}>`,
         embeds: [
           new EmbedBuilder()
             .setTitle(`🎫 Ticket #${id}`)
             .addFields(
-              { name: "Name", value: `<@${i.user.id}>` },
-              { name: "Type", value: i.values[0] },
-              { name: "Describe your issue", value: "Write your issue here" }
+              { name: "👤 Player", value: `<@${i.user.id}>` },
+              { name: "🎫 Type", value: i.values[0] },
+              { name: "📄 Issue", value: "Describe your issue" }
             )
             .setFooter({ text: "Our team will assist you shortly" })
-        ]
+        ],
+        components: [closeBtn]
       });
 
       return i.editReply("✅ Ticket Created");
     }
 
+    // ================= CLOSE BUTTON =================
+    if (i.isButton() && i.customId === "close_ticket") {
+      if (!isAllowed(i))
+        return i.reply({ content: "❌ No permission", ephemeral: true });
+
+      await i.reply({ content: "🔒 Closing..." });
+
+      const file = await transcripts.createTranscript(i.channel);
+
+      const log = i.guild.channels.cache.get(LOG_CHANNEL);
+      if (log) {
+        await log.send({
+          files: [file],
+          content: `📁 Ticket closed: ${i.channel.name}`
+        });
+      }
+
+      setTimeout(() => i.channel.delete(), 1500);
+    }
+
+    // ================= CLOSE COMMAND =================
+    if (i.commandName === "close") {
+      if (!isAllowed(i)) return i.editReply("❌ No permission");
+
+      await i.editReply("🔒 Closing...");
+
+      const file = await transcripts.createTranscript(i.channel);
+
+      const log = i.guild.channels.cache.get(LOG_CHANNEL);
+      if (log) {
+        await log.send({
+          files: [file],
+          content: `📁 Ticket closed: ${i.channel.name}`
+        });
+      }
+
+      setTimeout(() => i.channel.delete(), 1500);
+    }
+
   } catch (err) {
     console.error(err);
-    if (i.deferred || i.replied)
+    if (i.replied || i.deferred)
       i.editReply("❌ Error occurred");
   }
 });
