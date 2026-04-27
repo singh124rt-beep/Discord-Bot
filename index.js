@@ -14,8 +14,7 @@ const {
   ButtonStyle,
   PermissionsBitField,
   EmbedBuilder,
-  StringSelectMenuBuilder,
-  ChannelType
+  StringSelectMenuBuilder
 } = require("discord.js");
 
 // ================= ERROR SAFETY =================
@@ -62,11 +61,11 @@ const client = new Client({
   ]
 });
 
-// ================= GREETINGS =================
+// ================= GREET =================
 client.on("messageCreate", (m) => {
   if (m.author.bot) return;
   if (["hi","hello","hey"].includes(m.content.toLowerCase())) {
-    m.reply(`👋 Greetings ${m.author.username}, Welcome to CRP`);
+    m.reply(`👋 Welcome ${m.author.username}`);
   }
 });
 
@@ -94,10 +93,10 @@ async function checkWarn(member, userId, channel, guild) {
     data.warns = 0;
     await data.save();
 
-    await member.timeout(24 * 60 * 60 * 1000, "3 warns auto timeout");
+    await member.timeout(24 * 60 * 60 * 1000, "3 warns auto");
 
     channel.send(`⛔ <@${userId}> auto timeout (24h)`);
-    sendLog(guild, `⛔ ${userId} auto timeout (3 warns)`);
+    sendLog(guild, `Auto timeout: ${userId}`);
   }
 }
 
@@ -119,67 +118,69 @@ const commands = [
     .addAttachmentOption(o=>o.setName("video1"))
     .addAttachmentOption(o=>o.setName("video2")),
 
-  new SlashCommandBuilder().setName("ticketpanel").setDescription("Open ticket panel"),
+  new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
   new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
 
   new SlashCommandBuilder()
     .setName("kick")
-    .addUserOption(o=>o.setName("user").setRequired(true))
-    .addStringOption(o=>o.setName("reason").setRequired(true)),
+    .addUserOption(o=>o.setRequired(true))
+    .addStringOption(o=>o.setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
-    .addUserOption(o=>o.setName("user").setRequired(true))
-    .addStringOption(o=>o.setName("reason").setRequired(true)),
+    .addUserOption(o=>o.setRequired(true))
+    .addStringOption(o=>o.setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("timeout")
-    .addUserOption(o=>o.setName("user").setRequired(true))
-    .addIntegerOption(o=>o.setName("time").setRequired(true))
+    .addUserOption(o=>o.setRequired(true))
+    .addIntegerOption(o=>o.setRequired(true))
     .addStringOption(o=>o.setName("reason")),
 
   new SlashCommandBuilder()
     .setName("untimeout")
-    .addUserOption(o=>o.setName("user").setRequired(true)),
+    .addUserOption(o=>o.setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("warn")
-    .addUserOption(o=>o.setName("user").setRequired(true))
-    .addStringOption(o=>o.setName("reason").setRequired(true)),
+    .addUserOption(o=>o.setRequired(true))
+    .addStringOption(o=>o.setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("unwarn")
-    .addUserOption(o=>o.setName("user").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("clearwarn")
-    .addUserOption(o=>o.setName("user").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("warnlist")
-    .addUserOption(o=>o.setName("user").setRequired(true)),
+  new SlashCommandBuilder().setName("unwarn").addUserOption(o=>o.setRequired(true)),
+  new SlashCommandBuilder().setName("clearwarn").addUserOption(o=>o.setRequired(true)),
+  new SlashCommandBuilder().setName("warnlist").addUserOption(o=>o.setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
-    .addIntegerOption(o=>o.setName("amount").setRequired(true)),
+    .addIntegerOption(o=>o.setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("addrole")
+    .addUserOption(o=>o.setRequired(true))
+    .addRoleOption(o=>o.setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("removerole")
+    .addUserOption(o=>o.setRequired(true))
+    .addRoleOption(o=>o.setRequired(true))
 
 ].map(c=>c.toJSON());
 
 // ================= READY =================
 client.once("clientReady", async () => {
-  console.log("🟢 Logged in as " + client.user.tag);
+  console.log(`🟢 Logged in as ${client.user.tag}`);
 
-  const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
+  const rest = new REST({version:"10"}).setToken(process.env.DISCORD_BOT_TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 
   console.log("✅ Commands loaded");
 });
 
-// ================= INTERACTIONS =================
+// ================= INTERACTION =================
 client.on("interactionCreate", async (i)=>{
   try {
 
-    if (i.isChatInputCommand()) await i.deferReply({ ephemeral: true });
+    if (i.isChatInputCommand()) await i.deferReply({ephemeral:true});
 
     const user = i.options?.getUser("user");
     const member = user ? await i.guild.members.fetch(user.id).catch(()=>null) : null;
@@ -198,40 +199,33 @@ client.on("interactionCreate", async (i)=>{
       });
 
       await ch.send({ content: msg, files });
-
-      sendLog(i.guild, `📢 Announcement`);
-      return i.editReply("Sent");
+      sendLog(i.guild, "Announcement sent");
+      return i.editReply("Done");
     }
 
-    // ===== WARN =====
+    // ===== WARN SYSTEM =====
     if (i.commandName === "warn") {
       let data = await Warn.findOne({ userId: user.id }) || new Warn({ userId: user.id });
-      data.warns++;
-      await data.save();
+      data.warns++; await data.save();
 
       const reason = i.options.getString("reason");
 
       i.channel.send(`⚠️ ${user} warned (${data.warns}/3)\nReason: ${reason}`);
-      sendLog(i.guild, `Warn: ${user.tag} | ${reason}`);
-
       await checkWarn(member, user.id, i.channel, i.guild);
-      return i.editReply("Done");
+
+      return i.editReply("Warned");
     }
 
     if (i.commandName === "unwarn") {
       let data = await Warn.findOne({ userId: user.id });
-      if (data && data.warns > 0) {
-        data.warns--;
-        await data.save();
-      }
-      i.channel.send(`✅ ${user} unwarned`);
-      return i.editReply("Done");
+      if (data && data.warns > 0) data.warns--;
+      await data.save();
+      return i.editReply("Removed 1 warn");
     }
 
     if (i.commandName === "clearwarn") {
       await Warn.deleteOne({ userId: user.id });
-      i.channel.send(`🧹 ${user} warns cleared`);
-      return i.editReply("Done");
+      return i.editReply("Cleared");
     }
 
     if (i.commandName === "warnlist") {
@@ -241,82 +235,62 @@ client.on("interactionCreate", async (i)=>{
 
     // ===== TIMEOUT =====
     if (i.commandName === "timeout") {
-      const reason = i.options.getString("reason") || "No reason";
-      await member.timeout(i.options.getInteger("time") * 60000, reason);
+      await member.timeout(i.options.getInteger("time")*60000, i.options.getString("reason"));
       return i.editReply("Timed out");
     }
 
     if (i.commandName === "untimeout") {
       await member.timeout(null);
-      return i.editReply("Removed");
-    }
-
-    // ===== PURGE =====
-    if (i.commandName === "purge") {
-      if (!isAllowed(i)) return i.editReply("❌ Not allowed");
-
-      const amount = i.options.getInteger("amount");
-      await i.channel.bulkDelete(amount, true);
-
-      sendLog(i.guild, `🧹 Purged ${amount}`);
-      return i.editReply("Deleted");
+      return i.editReply("Removed timeout");
     }
 
     // ===== TICKET PANEL =====
     if (i.commandName === "ticketpanel") {
       if (!isAllowed(i)) return i.editReply("❌ Not allowed");
 
-      const ch = i.channel;
-
       const menu = new StringSelectMenuBuilder()
         .setCustomId("ticket_select")
-        .setPlaceholder("Select Ticket Type")
         .addOptions([
           { label: "Support", value: "support" },
-          { label: "Report", value: "report" },
-          { label: "Appeal", value: "appeal" }
+          { label: "Report", value: "report" }
         ]);
 
       const row = new ActionRowBuilder().addComponents(menu);
 
-      await ch.send({
-        content: "🎫 Select ticket type",
-        components: [row]
-      });
-
-      return i.editReply("Panel sent");
+      await i.channel.send({ content: "🎫 Create ticket", components:[row] });
+      return i.editReply("Done");
     }
 
-    if (i.commandName === "close") {
-      return i.channel.delete().catch(()=>{});
-    }
-
-    // ===== SELECT MENU =====
+    // ===== CREATE TICKET =====
     if (i.isStringSelectMenu() && i.customId === "ticket_select") {
 
       const ch = await i.guild.channels.create({
         name: `ticket-${i.user.username}`,
         parent: TICKET_CATEGORY,
         permissionOverwrites: [
-          { id: i.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: i.user.id, allow: [PermissionsBitField.Flags.ViewChannel] },
-          { id: STAFF_ROLE, allow: [PermissionsBitField.Flags.ViewChannel] }
+          { id: i.guild.id, deny: ["ViewChannel"] },
+          { id: i.user.id, allow: ["ViewChannel"] },
+          { id: STAFF_ROLE, allow: ["ViewChannel"] }
         ]
       });
 
-      await ch.send(`<@&${STAFF_ROLE}>
+      await Ticket.create({ userId: i.user.id, channelId: ch.id });
 
-**🎫 New Ticket Opened**
+      await ch.send({
+        content: `<@&${STAFF_ROLE}>
+
+🎫 New Ticket Opened
+
 Name : ${i.user.username}
 Support : ${i.values[0]}
-Describe Your issue :`);
+Describe Your issue :`
+      });
 
-      return i.reply({ content: "Ticket created", ephemeral: true });
+      return i.reply({ content: "Ticket created", ephemeral:true });
     }
 
-  } catch (err) {
-    console.error(err);
-    if (!i.replied) i.reply({ content: "Error", ephemeral: true }).catch(()=>{});
+  } catch(e){
+    console.error(e);
   }
 });
 
