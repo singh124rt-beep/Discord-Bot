@@ -350,7 +350,17 @@ client.on("interactionCreate", async (i)=>{
 
       const row = new ActionRowBuilder().addComponents(menu);
 
-      await i.channel.send({ content: "🎫 Create Ticket", components: [row] });
+      await ch.send({
+  content: `<@&1390273593040048220>
+
+**🎫 New Ticket Opened**
+
+**Name :** ${i.user.username}
+**Support :** ${i.values ? i.values[0] : "General"}
+**Describe Your Issue :** (Please explain your issue in detail below)`
+,
+  components: [row]
+});
       return i.editReply("Panel sent");
     }
 
