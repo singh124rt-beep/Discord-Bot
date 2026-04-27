@@ -40,7 +40,7 @@ const app = express();
 app.get("/", (_, res) => res.send("Bot Running"));
 app.listen(3000);
 
-// ================= DB =================
+// ================= DATABASE =================
 mongoose.connect(process.env.MONGO_URI);
 
 const Warn = mongoose.model("Warn", new mongoose.Schema({
@@ -70,11 +70,18 @@ const client = new Client({
 });
 
 // ================= PERMISSIONS =================
-function canUseAdmin(i) {
+
+// ONLY ADMIN PANEL (ticketpanel + close)
+function isAdminCmd(i) {
   return (
     ALLOWED_USERS.includes(i.user.id) ||
     i.member.roles.cache.has(ADMIN_ROLE)
   );
+}
+
+// ONLY ALLOWED USERS (all other commands)
+function isAllowedOnly(i) {
+  return ALLOWED_USERS.includes(i.user.id);
 }
 
 // ================= COMMANDS =================
@@ -114,7 +121,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("warnlist")
-    .setDescription("Warn list")
+    .setDescription("Show warns")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
@@ -154,12 +161,13 @@ client.on("interactionCreate", async (i) => {
   try {
 
     if (i.user.id === BLOCKED_USER) {
-      return i.reply({ content: "❌ Blocked user", ephemeral: true });
+      return i.reply({ content: "❌ You are blocked", ephemeral: true });
     }
 
-    // ================= SLASH =================
+    // ================= SLASH COMMANDS =================
     if (i.isChatInputCommand()) {
 
+      // ===== PUBLIC =====
       if (i.commandName === "ping")
         return i.reply({ content: `🏓 ${client.ws.ping}ms`, ephemeral: true });
 
@@ -174,7 +182,10 @@ client.on("interactionCreate", async (i) => {
           ephemeral: true
         });
 
+      // ===== ADMIN ONLY =====
       if (i.commandName === "announce") {
+        if (!isAllowedOnly(i)) return i.reply({ content: "❌ No permission", ephemeral: true });
+
         const msg = i.options.getString("message");
         const ch = i.options.getChannel("channel") || i.channel;
 
@@ -185,18 +196,17 @@ client.on("interactionCreate", async (i) => {
         });
 
         await ch.send({ content: msg, files });
-
         return i.reply({ content: "✅ Sent", ephemeral: true });
       }
 
-      // ================= TICKET PANEL (LOCKED) =================
+      // ================= TICKET PANEL (ADMIN ONLY) =================
       if (i.commandName === "ticketpanel") {
-        if (!canUseAdmin(i)) {
+        if (!isAdminCmd(i)) {
           return i.reply({ content: "❌ No permission", ephemeral: true });
         }
 
         const embed = new EmbedBuilder()
-          .setTitle("🎟️ Tickets")
+          .setTitle("🎟️ Ticket System")
           .setDescription("To open a ticket 🎟️ Click below 👇")
           .setColor("Blue");
 
@@ -210,9 +220,9 @@ client.on("interactionCreate", async (i) => {
         return i.reply({ embeds: [embed], components: [row] });
       }
 
-      // ================= CLOSE (LOCKED) =================
+      // ================= CLOSE (ADMIN ONLY) =================
       if (i.commandName === "close") {
-        if (!canUseAdmin(i)) {
+        if (!isAdminCmd(i)) {
           return i.reply({ content: "❌ No permission", ephemeral: true });
         }
 
@@ -248,7 +258,7 @@ client.on("interactionCreate", async (i) => {
       });
     }
 
-    // ================= SELECT MENU =================
+    // ================= TICKET CREATE =================
     if (i.isStringSelectMenu() && i.customId === "ticket_select") {
 
       await i.deferReply({ ephemeral: true });
@@ -281,10 +291,8 @@ client.on("interactionCreate", async (i) => {
         .setTitle(`🎫 Ticket #${id}`)
         .setColor("Green")
         .setDescription(
-`Name : ${i.user.username}
-(Who created this ticket)
-
-Type : ${i.values[0]}
+`Name : ${i.user}  
+Type : ${i.values[0]}  
 
 Describe your issue:
 
