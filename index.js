@@ -26,31 +26,21 @@ const TICKET_CATEGORY = "1404779580283424829";
 const LOG_CHANNEL = "1375845745596305408";
 const TRANSCRIPT_CHANNEL = LOG_CHANNEL;
 
-// 🚫 BLOCKED USER
 const BLOCKED_USER = "1366502670788984902";
-
-// ALLOWED ADMINS
-const ALLOWED_USERS = [
-  "1420063137838923868",
-  "1378368132376297514",
-  "1335285604476522529"
-];
 
 // ================= EXPRESS =================
 const app = express();
 app.get("/", (_, res) => res.send("Bot Running"));
 app.listen(3000);
 
-// ================= DATABASE =================
+// ================= DB =================
 mongoose.connect(process.env.MONGO_URI);
 
-// WARN SYSTEM
 const Warn = mongoose.model("Warn", new mongoose.Schema({
   userId: String,
   warns: { type: Number, default: 0 }
 }));
 
-// TICKET COUNTER
 const TicketCounter = mongoose.model("TicketCounter", new mongoose.Schema({
   guildId: String,
   count: { type: Number, default: 0 }
@@ -74,7 +64,6 @@ const client = new Client({
 
 // ================= ANTI SPAM =================
 const spam = new Map();
-
 function antiSpam(id) {
   const now = Date.now();
   const d = spam.get(id) || { count: 0, last: now };
@@ -88,25 +77,28 @@ function antiSpam(id) {
   return d.count > 5;
 }
 
-// ================= HELPERS =================
+// ================= COMMAND CHECK =================
 function isAllowed(i) {
-  return (
-    ALLOWED_USERS.includes(i.user.id) ||
-    i.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-    i.member.roles.cache.has(STAFF_ROLE)
-  );
+  return i.member.permissions.has(PermissionsBitField.Flags.Administrator)
+    || i.member.roles.cache.has(STAFF_ROLE);
 }
 
+// ================= LOG =================
 function log(guild, msg) {
   const ch = guild.channels.cache.get(LOG_CHANNEL);
   if (ch) ch.send(msg).catch(() => {});
 }
 
-// ================= COMMANDS =================
+// ================= COMMANDS (FIXED SAFE BUILD) =================
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Bot ping"),
-  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
+  new SlashCommandBuilder()
+    .setName("ping")
+    .setDescription("Check bot ping"),
+
+  new SlashCommandBuilder()
+    .setName("serverinfo")
+    .setDescription("Show server info"),
 
   new SlashCommandBuilder()
     .setName("announce")
@@ -117,8 +109,13 @@ const commands = [
     .addAttachmentOption(o => o.setName("image2").setDescription("Image 2"))
     .addAttachmentOption(o => o.setName("image3").setDescription("Image 3")),
 
-  new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
-  new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
+  new SlashCommandBuilder()
+    .setName("ticketpanel")
+    .setDescription("Create ticket panel"),
+
+  new SlashCommandBuilder()
+    .setName("close")
+    .setDescription("Close ticket"),
 
   new SlashCommandBuilder()
     .setName("warn")
@@ -138,7 +135,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("warnlist")
-    .setDescription("Warn list")
+    .setDescription("Check warns")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
@@ -182,25 +179,21 @@ client.once("ready", async () => {
     body: commands
   });
 
-  console.log("✅ Commands loaded");
+  console.log("✅ Commands registered");
 });
 
 // ================= INTERACTIONS =================
 client.on("interactionCreate", async (i) => {
   try {
 
-    // 🚫 BLOCKED USER CHECK
+    // 🚫 BLOCKED USER
     if (i.user.id === BLOCKED_USER) {
-      return i.reply({
-        content: "❌ You are not allowed to use this bot.",
-        ephemeral: true
-      });
+      return i.reply({ content: "❌ You are blocked.", ephemeral: true });
     }
 
     if (i.isChatInputCommand()) await i.deferReply({ ephemeral: true });
 
     const user = i.options?.getUser("user");
-    const member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
 
     // ================= PING =================
     if (i.commandName === "ping") {
@@ -219,7 +212,7 @@ client.on("interactionCreate", async (i) => {
       });
     }
 
-    // ================= ANNOUNCE (FIXED IMAGES) =================
+    // ================= ANNOUNCE (FIXED) =================
     if (i.commandName === "announce") {
       if (!isAllowed(i)) return i.editReply("❌ No permission");
 
@@ -241,7 +234,7 @@ client.on("interactionCreate", async (i) => {
     if (i.commandName === "ticketpanel") {
 
       const embed = new EmbedBuilder()
-        .setTitle("🎟️ Support Tickets")
+        .setTitle("🎟️ Tickets")
         .setDescription("To open a ticket 🎟️ Click below 👇")
         .setColor("Blue");
 
@@ -255,12 +248,11 @@ client.on("interactionCreate", async (i) => {
       return i.channel.send({ embeds: [embed], components: [row] });
     }
 
-    // ================= BUTTON OPEN =================
+    // ================= OPEN TICKET =================
     if (i.isButton() && i.customId === "open_ticket") {
 
       const menu = new StringSelectMenuBuilder()
         .setCustomId("ticket_select")
-        .setPlaceholder("Select issue type")
         .addOptions([
           { label: "Support", value: "Support" },
           { label: "Report", value: "Report" },
@@ -268,13 +260,13 @@ client.on("interactionCreate", async (i) => {
         ]);
 
       return i.reply({
-        content: "Select ticket type:",
+        content: "Select type:",
         components: [new ActionRowBuilder().addComponents(menu)],
         ephemeral: true
       });
     }
 
-    // ================= CREATE TICKET + ID =================
+    // ================= CREATE TICKET =================
     if (i.isStringSelectMenu() && i.customId === "ticket_select") {
 
       let counter = await TicketCounter.findOne({ guildId: i.guild.id });
@@ -283,10 +275,10 @@ client.on("interactionCreate", async (i) => {
       counter.count++;
       await counter.save();
 
-      const ticketId = counter.count;
+      const id = counter.count;
 
       const ch = await i.guild.channels.create({
-        name: `ticket-${ticketId}`,
+        name: `ticket-${id}`,
         parent: TICKET_CATEGORY,
         permissionOverwrites: [
           { id: i.guild.id, deny: ["ViewChannel"] },
@@ -295,28 +287,20 @@ client.on("interactionCreate", async (i) => {
         ]
       });
 
-      await Ticket.create({
-        userId: i.user.id,
-        channelId: ch.id,
-        ticketId
-      });
-
       const embed = new EmbedBuilder()
-        .setTitle(`🎫 Ticket #${ticketId}`)
+        .setTitle(`🎫 Ticket #${id}`)
         .setColor("Green")
         .addFields(
-          { name: "Name", value: `<@${i.user.id}>` },
-          { name: "Type", value: i.values[0] },
-          { name: "Issue", value: "Describe your issue below" }
-        )
-        .setFooter({ text: "Our team will reach to you shortly" });
+          { name: "User", value: `<@${i.user.id}>` },
+          { name: "Type", value: i.values[0] }
+        );
 
       await ch.send({
         content: `<@&${STAFF_ROLE}>`,
         embeds: [embed]
       });
 
-      return i.reply({ content: `Ticket created #${ticketId}`, ephemeral: true });
+      return i.reply({ content: `Ticket #${id} created`, ephemeral: true });
     }
 
     // ================= CLOSE =================
@@ -341,7 +325,7 @@ client.on("messageCreate", (m) => {
   if (m.author.bot) return;
   if (antiSpam(m.author.id)) {
     m.delete().catch(() => {});
-    m.channel.send(`⚠️ ${m.author} stop spam`);
+    m.channel.send(`⚠️ Spam detected`);
   }
 });
 
