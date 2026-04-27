@@ -21,7 +21,6 @@ process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
 
 // ================= CONFIG =================
-const STAFF_ROLE = "1390273593040048220";
 const ADMIN_ROLE = "1390273593040048220";
 
 const TICKET_CATEGORY = "1404779580283424829";
@@ -41,7 +40,7 @@ const app = express();
 app.get("/", (_, res) => res.send("Bot Running"));
 app.listen(3000);
 
-// ================= DATABASE =================
+// ================= DB =================
 mongoose.connect(process.env.MONGO_URI);
 
 const Warn = mongoose.model("Warn", new mongoose.Schema({
@@ -70,80 +69,70 @@ const client = new Client({
   ]
 });
 
-// ================= SPAM =================
-const spam = new Map();
-function antiSpam(id) {
-  const now = Date.now();
-  const d = spam.get(id) || { count: 0, last: now };
-
-  if (now - d.last < 3000) d.count++;
-  else d.count = 1;
-
-  d.last = now;
-  spam.set(id, d);
-
-  return d.count > 5;
-}
-
-// ================= PERMISSION =================
-function isAllowed(i) {
+// ================= PERMISSIONS =================
+function canUseAdmin(i) {
   return (
     ALLOWED_USERS.includes(i.user.id) ||
-    i.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
     i.member.roles.cache.has(ADMIN_ROLE)
   );
 }
 
-// ================= COMMANDS (FULL RESTORED) =================
+// ================= COMMANDS =================
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Bot ping"),
+  new SlashCommandBuilder().setName("ping").setDescription("Check bot ping"),
 
-  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
+  new SlashCommandBuilder().setName("serverinfo").setDescription("Show server info"),
 
   new SlashCommandBuilder()
     .setName("announce")
     .setDescription("Send announcement")
-    .addStringOption(o => o.setName("message").setRequired(true))
-    .addChannelOption(o => o.setName("channel"))
-    .addAttachmentOption(o => o.setName("image1"))
-    .addAttachmentOption(o => o.setName("image2"))
-    .addAttachmentOption(o => o.setName("image3")),
+    .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
+    .addChannelOption(o => o.setName("channel").setDescription("Channel"))
+    .addAttachmentOption(o => o.setName("image1").setDescription("Image 1"))
+    .addAttachmentOption(o => o.setName("image2").setDescription("Image 2"))
+    .addAttachmentOption(o => o.setName("image3").setDescription("Image 3")),
 
-  new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
+  new SlashCommandBuilder().setName("ticketpanel").setDescription("Open ticket panel"),
   new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
 
   new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Warn user")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addStringOption(o => o.setName("reason").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
-  new SlashCommandBuilder().setName("unwarn").setDescription("Remove warn")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+  new SlashCommandBuilder()
+    .setName("unwarn")
+    .setDescription("Remove warn")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder().setName("clearwarn").setDescription("Clear warns")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+  new SlashCommandBuilder()
+    .setName("clearwarn")
+    .setDescription("Clear warns")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder().setName("warnlist").setDescription("Warn list")
-    .addUserOption(o => o.setName("user").setRequired(true)),
+  new SlashCommandBuilder()
+    .setName("warnlist")
+    .setDescription("Warn list")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("purge")
     .setDescription("Delete messages")
-    .addIntegerOption(o => o.setName("amount").setRequired(true)),
+    .addIntegerOption(o => o.setName("amount").setDescription("Messages").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("addrole")
     .setDescription("Add role")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addRoleOption(o => o.setName("role").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("removerole")
     .setDescription("Remove role")
-    .addUserOption(o => o.setName("user").setRequired(true))
-    .addRoleOption(o => o.setName("role").setRequired(true))
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true))
 
 ].map(c => c.toJSON());
 
@@ -186,8 +175,6 @@ client.on("interactionCreate", async (i) => {
         });
 
       if (i.commandName === "announce") {
-        if (!isAllowed(i)) return i.reply({ content: "❌ No permission", ephemeral: true });
-
         const msg = i.options.getString("message");
         const ch = i.options.getChannel("channel") || i.channel;
 
@@ -202,8 +189,11 @@ client.on("interactionCreate", async (i) => {
         return i.reply({ content: "✅ Sent", ephemeral: true });
       }
 
+      // ================= TICKET PANEL (LOCKED) =================
       if (i.commandName === "ticketpanel") {
-        if (!isAllowed(i)) return i.reply({ content: "❌ No permission", ephemeral: true });
+        if (!canUseAdmin(i)) {
+          return i.reply({ content: "❌ No permission", ephemeral: true });
+        }
 
         const embed = new EmbedBuilder()
           .setTitle("🎟️ Tickets")
@@ -220,15 +210,22 @@ client.on("interactionCreate", async (i) => {
         return i.reply({ embeds: [embed], components: [row] });
       }
 
+      // ================= CLOSE (LOCKED) =================
       if (i.commandName === "close") {
-        if (!isAllowed(i)) return i.reply({ content: "❌ No permission", ephemeral: true });
+        if (!canUseAdmin(i)) {
+          return i.reply({ content: "❌ No permission", ephemeral: true });
+        }
+
+        if (!i.channel.name.startsWith("ticket-")) {
+          return i.reply({ content: "❌ Not a ticket channel", ephemeral: true });
+        }
 
         const file = await transcripts.createTranscript(i.channel);
 
         const logCh = i.guild.channels.cache.get(TRANSCRIPT_CHANNEL);
         if (logCh) logCh.send({ files: [file] });
 
-        await i.reply("Closing...");
+        await i.reply("🔒 Closing ticket...");
         setTimeout(() => i.channel.delete(), 2000);
       }
     }
@@ -251,7 +248,7 @@ client.on("interactionCreate", async (i) => {
       });
     }
 
-    // ================= SELECT MENU FIXED =================
+    // ================= SELECT MENU =================
     if (i.isStringSelectMenu() && i.customId === "ticket_select") {
 
       await i.deferReply({ ephemeral: true });
@@ -270,7 +267,7 @@ client.on("interactionCreate", async (i) => {
         permissionOverwrites: [
           { id: i.guild.id, deny: ["ViewChannel"] },
           { id: i.user.id, allow: ["ViewChannel", "SendMessages"] },
-          { id: STAFF_ROLE, allow: ["ViewChannel", "SendMessages"] }
+          { id: ADMIN_ROLE, allow: ["ViewChannel", "SendMessages"] }
         ]
       });
 
@@ -295,7 +292,7 @@ Our Team will assist you shortly`
         );
 
       await ch.send({
-        content: `<@&${STAFF_ROLE}>`,
+        content: `<@&${ADMIN_ROLE}>`,
         embeds: [embed]
       });
 
@@ -305,12 +302,6 @@ Our Team will assist you shortly`
   } catch (err) {
     console.error(err);
   }
-});
-
-// ================= ANTI SPAM =================
-client.on("messageCreate", (m) => {
-  if (m.author.bot) return;
-  if (antiSpam(m.author.id)) m.delete().catch(() => {});
 });
 
 // ================= LOGIN =================
