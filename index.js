@@ -1,4 +1,3 @@
-// ================= IMPORTS =================
 const express = require("express");
 const mongoose = require("mongoose");
 const transcripts = require("discord-html-transcripts");
@@ -36,27 +35,26 @@ const app = express();
 app.get("/", (_, res) => res.send("Bot Running"));
 app.listen(3000);
 
-// ================= DATABASE =================
+// ================= DB =================
 mongoose.connect(MONGO)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch(err => console.error(err));
-
-const Warn = mongoose.model("Warn", new mongoose.Schema({
-  userId: String,
-  warns: [{ reason: String, time: Date }]
-}));
+.then(()=>console.log("Mongo Connected"))
+.catch(()=>console.log("Mongo Error"));
 
 const TicketCounter = mongoose.model("TicketCounter", new mongoose.Schema({
   guildId: String,
   count: { type: Number, default: 0 }
 }));
 
+const Warn = mongoose.model("Warn", new mongoose.Schema({
+  userId: String,
+  warns: [{ reason: String, by: String, time: Date }]
+}));
+
 // ================= CLIENT =================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -64,7 +62,7 @@ const client = new Client({
 function isAllowed(member) {
   return (
     member.roles.cache.has(ADMIN_ROLE) ||
-    ALLOWED_USERS.includes(member.id) ||
+    ALLOWED_USERS.includes(member.user.id) ||
     member.permissions.has(PermissionsBitField.Flags.Administrator)
   );
 }
@@ -74,23 +72,46 @@ const commands = [
 
   new SlashCommandBuilder().setName("ping").setDescription("Ping"),
 
-  new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
+  new SlashCommandBuilder().setName("serverinfo").setDescription("Server Info"),
 
   new SlashCommandBuilder()
     .setName("announce")
-    .setDescription("Send announcement")
+    .setDescription("Announcement")
     .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
     .addChannelOption(o => o.setName("channel").setDescription("Channel"))
-    .addAttachmentOption(o => o.setName("file1").setDescription("Media 1"))
-    .addAttachmentOption(o => o.setName("file2").setDescription("Media 2"))
-    .addAttachmentOption(o => o.setName("file3").setDescription("Media 3")),
+    .addAttachmentOption(o => o.setName("file1").setDescription("File1"))
+    .addAttachmentOption(o => o.setName("file2").setDescription("File2")),
 
   new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
   new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
 
   new SlashCommandBuilder()
+    .setName("kick")
+    .setDescription("Kick")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("ban")
+    .setDescription("Ban")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("timeout")
+    .setDescription("Timeout")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("untimeout")
+    .setDescription("Untimeout")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  new SlashCommandBuilder()
     .setName("warn")
-    .setDescription("Warn user")
+    .setDescription("Warn")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
 
@@ -101,10 +122,10 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("clearwarn")
-    .setDescription("Clear all warns")
+    .setDescription("Clear warns")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
-  new SlashCommandBuilder().setName("warnlist").setDescription("All warns"),
+  new SlashCommandBuilder().setName("warnlist").setDescription("Warn list"),
 
   new SlashCommandBuilder()
     .setName("purge")
@@ -112,216 +133,229 @@ const commands = [
     .addIntegerOption(o => o.setName("amount").setDescription("Amount").setRequired(true)),
 
   new SlashCommandBuilder()
-    .setName("kick")
-    .setDescription("Kick user")
+    .setName("addrole")
+    .setDescription("Add role")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true)),
 
   new SlashCommandBuilder()
-    .setName("ban")
-    .setDescription("Ban user")
+    .setName("removerole")
+    .setDescription("Remove role")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("timeout")
-    .setDescription("Timeout user")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("untimeout")
-    .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true))
 
 ].map(c => c.toJSON());
 
 // ================= READY =================
-client.once("clientReady", async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+client.once("ready", async () => {
+  console.log("Bot Ready");
 
   const rest = new REST({ version: "10" }).setToken(TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 
-  console.log("✅ Slash commands registered");
+  console.log("Commands Registered");
 });
 
 // ================= INTERACTIONS =================
-client.on("interactionCreate", async (i) => {
+client.on("interactionCreate", async i => {
   try {
 
-    if (!i.isChatInputCommand() && !i.isButton() && !i.isStringSelectMenu()) return;
+    if (!i.guild) return;
 
-    // 🔥 FIX: prevent "application did not respond"
-    if (i.isChatInputCommand()) await i.deferReply({ ephemeral: true });
+    // ================= BASIC =================
+    if (i.commandName === "ping")
+      return i.reply({ content: "Pong", ephemeral: true });
+
+    if (i.commandName === "serverinfo")
+      return i.reply({ content: `Members: ${i.guild.memberCount}`, ephemeral: true });
 
     // ================= ANNOUNCE =================
     if (i.commandName === "announce") {
-      if (!isAllowed(i.member)) return i.editReply("No permission");
+      if (!isAllowed(i.member)) return i.reply({ content: "No permission", ephemeral: true });
 
       const msg = i.options.getString("message");
       const ch = i.options.getChannel("channel") || i.channel;
 
       const files = [];
-      ["file1","file2","file3"].forEach(f=>{
-        const file = i.options.getAttachment(f);
+      ["file1","file2"].forEach(f=>{
+        const file=i.options.getAttachment(f);
         if(file) files.push(file.url);
       });
 
       await ch.send({ content: msg, files });
-      return i.editReply("Sent 📤");
-    }
-
-    // ================= WARN =================
-    if (i.commandName === "warn") {
-      if (!isAllowed(i.member)) return i.editReply("No permission");
-
-      const user = i.options.getUser("user");
-      const reason = i.options.getString("reason");
-
-      let data = await Warn.findOne({ userId: user.id });
-      if (!data) data = await Warn.create({ userId: user.id, warns: [] });
-
-      data.warns.push({ reason, time: new Date() });
-      await data.save();
-
-      const count = data.warns.length;
-
-      if (count >= 3) {
-        const member = await i.guild.members.fetch(user.id);
-        await member.timeout(24 * 60 * 60 * 1000, "3 warns");
-      }
-
-      return i.editReply(`<@${user.id}> warned (${count}/3)`);
-    }
-
-    // ================= UNWARN =================
-    if (i.commandName === "unwarn") {
-      if (!isAllowed(i.member)) return i.editReply("No permission");
-
-      const user = i.options.getUser("user");
-      let data = await Warn.findOne({ userId: user.id });
-
-      if (!data || data.warns.length === 0)
-        return i.editReply("No warns");
-
-      data.warns.pop();
-      await data.save();
-
-      return i.editReply(`<@${user.id}> unwarned (${data.warns.length}/3)`);
-    }
-
-    // ================= CLEAR WARN =================
-    if (i.commandName === "clearwarn") {
-      if (!isAllowed(i.member)) return i.editReply("No permission");
-
-      const user = i.options.getUser("user");
-      await Warn.deleteOne({ userId: user.id });
-
-      return i.editReply(`<@${user.id}> warns cleared`);
-    }
-
-    // ================= WARN LIST =================
-    if (i.commandName === "warnlist") {
-      const data = await Warn.find();
-
-      if (!data.length) return i.editReply("No warns");
-
-      let text = "";
-      data.forEach(d => {
-        text += `<@${d.userId}> → ${d.warns.length} warns\n`;
-      });
-
-      return i.editReply(text);
-    }
-
-    // ================= PURGE =================
-    if (i.commandName === "purge") {
-      if (!isAllowed(i.member)) return i.editReply("No permission");
-
-      const amount = i.options.getInteger("amount");
-      await i.channel.bulkDelete(amount);
-
-      return i.editReply("Deleted");
-    }
-
-    // ================= TIMEOUT =================
-    if (i.commandName === "timeout") {
-      if (!isAllowed(i.member)) return i.editReply("No permission");
-
-      const user = i.options.getUser("user");
-      const duration = i.options.getInteger("duration");
-
-      const member = await i.guild.members.fetch(user.id);
-      await member.timeout(duration * 60000);
-
-      return i.editReply(`Timed out ${user.tag}`);
-    }
-
-    // ================= UNTIMEOUT =================
-    if (i.commandName === "untimeout") {
-      if (!isAllowed(i.member)) return i.editReply("No permission");
-
-      const user = i.options.getUser("user");
-      const member = await i.guild.members.fetch(user.id);
-
-      await member.timeout(null);
-
-      return i.editReply(`Timeout removed ${user.tag}`);
+      return i.reply({ content: "Sent 📤", ephemeral: true });
     }
 
     // ================= TICKET PANEL =================
     if (i.commandName === "ticketpanel") {
-      if (!isAllowed(i.member)) return i.editReply("No permission");
+      if (!i.member.roles.cache.has(ADMIN_ROLE))
+        return i.reply({ content: "No permission", ephemeral: true });
 
-      const btn = new ButtonBuilder()
-        .setCustomId("ticket_create")
-        .setLabel("Create Ticket")
-        .setStyle(ButtonStyle.Primary);
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("ticket").setLabel("Create Ticket").setStyle(ButtonStyle.Primary)
+      );
 
-      await i.channel.send({
-        components: [new ActionRowBuilder().addComponents(btn)]
-      });
-
-      return i.editReply("Sent 📤");
+      await i.channel.send({ content: "To open a Ticket Click below 👇", components: [row] });
+      return i.reply({ content: "Sent 📤", ephemeral: true });
     }
 
-    // ================= CREATE TICKET =================
-    if (i.isButton() && i.customId === "ticket_create") {
-      await i.deferUpdate();
+    // ================= CLOSE COMMAND =================
+    if (i.commandName === "close") {
+      if (!isAllowed(i.member)) return i.reply({ content: "No permission", ephemeral: true });
 
-      let data = await TicketCounter.findOne({ guildId: i.guild.id });
-      if (!data) data = await TicketCounter.create({ guildId: i.guild.id, count: 0 });
+      await i.reply({ content: "Closing...", ephemeral: true });
+      setTimeout(()=> i.channel.delete(),2000);
+    }
 
-      data.count++;
+    // ================= BUTTON =================
+    if (i.isButton() && i.customId === "ticket") {
+
+      const menu = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("type")
+          .setPlaceholder("Select Ticket Type")
+          .addOptions([
+            { label: "Support", value: "Support" },
+            { label: "Report", value: "Report" },
+            { label: "Help", value: "Help" }
+          ])
+      );
+
+      return i.reply({ content: "Select type", components: [menu], ephemeral: true });
+    }
+
+    // ================= SELECT =================
+    if (i.isStringSelectMenu()) {
+
+      const counter = await TicketCounter.findOneAndUpdate(
+        { guildId: i.guild.id },
+        { $inc: { count: 1 } },
+        { new: true, upsert: true }
+      );
+
+      const channel = await i.guild.channels.create({
+        name: `ticket-${counter.count}`,
+        type: 0,
+        parent: TICKET_CATEGORY,
+        permissionOverwrites: [
+          { id: i.guild.id, deny: ["ViewChannel"] },
+          { id: i.user.id, allow: ["ViewChannel","SendMessages"] },
+          { id: ADMIN_ROLE, allow: ["ViewChannel","SendMessages"] }
+        ]
+      });
+
+      const closeBtn = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("close_btn").setLabel("Close").setStyle(ButtonStyle.Danger)
+      );
+
+      await channel.send({
+        content: `<@&${ADMIN_ROLE}>\n\nName: <@${i.user.id}>\nType: ${i.values[0]}\nDescribe your issue:\n\nOur team will assist you shortly`,
+        components: [closeBtn]
+      });
+
+      return i.update({ content: "Ticket Created", components: [] });
+    }
+
+    // ================= CLOSE BUTTON =================
+    if (i.isButton() && i.customId === "close_btn") {
+      if (!isAllowed(i.member))
+        return i.reply({ content: "No permission", ephemeral: true });
+
+      await i.reply({ content: "Closing...", ephemeral: true });
+      setTimeout(()=> i.channel.delete(),2000);
+    }
+
+    // ================= MODERATION =================
+    if (!isAllowed(i.member))
+      return i.reply({ content: "No permission", ephemeral: true });
+
+    if (i.commandName === "kick") {
+      const u=i.options.getUser("user");
+      await i.guild.members.kick(u.id);
+      return i.reply({ content: `Kicked ${u.tag}`, ephemeral: true });
+    }
+
+    if (i.commandName === "ban") {
+      const u=i.options.getUser("user");
+      await i.guild.members.ban(u.id);
+      return i.reply({ content: `Banned ${u.tag}`, ephemeral: true });
+    }
+
+    if (i.commandName === "timeout") {
+      const u=i.options.getUser("user");
+      const t=i.options.getInteger("time");
+      const m=await i.guild.members.fetch(u.id);
+      await m.timeout(t*60000);
+      return i.reply({ content: "Timed out", ephemeral: true });
+    }
+
+    if (i.commandName === "untimeout") {
+      const u=i.options.getUser("user");
+      const m=await i.guild.members.fetch(u.id);
+      await m.timeout(null);
+      return i.reply({ content: "Removed timeout", ephemeral: true });
+    }
+
+    if (i.commandName === "purge") {
+      const a=i.options.getInteger("amount");
+      await i.channel.bulkDelete(a);
+      return i.reply({ content: "Deleted", ephemeral: true });
+    }
+
+    if (i.commandName === "addrole") {
+      const u=i.options.getUser("user");
+      const r=i.options.getRole("role");
+      const m=await i.guild.members.fetch(u.id);
+      await m.roles.add(r);
+      return i.reply({ content: "Role added", ephemeral: true });
+    }
+
+    if (i.commandName === "removerole") {
+      const u=i.options.getUser("user");
+      const r=i.options.getRole("role");
+      const m=await i.guild.members.fetch(u.id);
+      await m.roles.remove(r);
+      return i.reply({ content: "Role removed", ephemeral: true });
+    }
+
+    // ================= WARN SYSTEM =================
+    if (i.commandName === "warn") {
+      const u=i.options.getUser("user");
+      const r=i.options.getString("reason");
+
+      let data = await Warn.findOne({ userId: u.id }) || new Warn({ userId: u.id, warns: [] });
+      data.warns.push({ reason: r, by: i.user.id, time: new Date() });
       await data.save();
 
-      const ch = await i.guild.channels.create({
-        name: `ticket-${data.count}`,
-        parent: TICKET_CATEGORY
-      });
+      if (data.warns.length >= 3) {
+        const m=await i.guild.members.fetch(u.id);
+        await m.timeout(24*60*60*1000);
+      }
 
-      await ch.send(`<@&${ADMIN_ROLE}>
-
-Name: <@${i.user.id}>
-Type:
-Describe your issue:
-
-Our team will assist you shortly`);
-
+      return i.reply({ content: `<@${u.id}> warned (${data.warns.length}/3)`, ephemeral: true });
     }
 
-    // ================= CLOSE =================
-    if (i.commandName === "close") {
-      if (!isAllowed(i.member)) return i.editReply("No permission");
+    if (i.commandName === "unwarn") {
+      const u=i.options.getUser("user");
+      let data = await Warn.findOne({ userId: u.id });
+      if (!data) return i.reply({ content: "No warns", ephemeral: true });
 
-      const file = await transcripts.createTranscript(i.channel);
-      const log = i.guild.channels.cache.get(LOG_CHANNEL);
+      data.warns.pop();
+      await data.save();
 
-      if (log) log.send({ files: [file] });
+      return i.reply({ content: `<@${u.id}> unwarned (${data.warns.length}/3)`, ephemeral: true });
+    }
 
-      await i.editReply("Closing...");
-      setTimeout(() => i.channel.delete(), 2000);
+    if (i.commandName === "clearwarn") {
+      const u=i.options.getUser("user");
+      await Warn.deleteOne({ userId: u.id });
+      return i.reply({ content: "Cleared", ephemeral: true });
+    }
+
+    if (i.commandName === "warnlist") {
+      const all = await Warn.find();
+      const text = all.map(x=>`<@${x.userId}> - ${x.warns.length}`).join("\n");
+      return i.reply({ content: text || "No warns", ephemeral: true });
     }
 
   } catch (err) {
