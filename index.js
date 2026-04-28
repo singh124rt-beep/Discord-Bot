@@ -35,7 +35,7 @@ const app = express();
 app.get("/", (_, res) => res.send("Bot Running"));
 app.listen(3000);
 
-// ================= DATABASE =================
+// ================= DB =================
 mongoose.connect(MONGO);
 
 const Warn = mongoose.model("Warn", new mongoose.Schema({
@@ -67,10 +67,17 @@ function isAllowed(member) {
   );
 }
 
+function isStrict(member) {
+  return (
+    member.roles.cache.has(ADMIN_ROLE) ||
+    ALLOWED_USERS.includes(member.id)
+  );
+}
+
 // ================= COMMANDS =================
 const commands = [
 
-  new SlashCommandBuilder().setName("ping").setDescription("Ping"),
+  new SlashCommandBuilder().setName("ping").setDescription("Check ping"),
 
   new SlashCommandBuilder().setName("serverinfo").setDescription("Server info"),
 
@@ -79,44 +86,19 @@ const commands = [
     .setDescription("Send announcement")
     .addStringOption(o => o.setName("message").setDescription("Message").setRequired(true))
     .addChannelOption(o => o.setName("channel").setDescription("Channel"))
-    .addAttachmentOption(o => o.setName("file1").setDescription("File1"))
-    .addAttachmentOption(o => o.setName("file2").setDescription("File2"))
-    .addAttachmentOption(o => o.setName("file3").setDescription("File3")),
+    .addAttachmentOption(o => o.setName("file1").setDescription("Media 1"))
+    .addAttachmentOption(o => o.setName("file2").setDescription("Media 2"))
+    .addAttachmentOption(o => o.setName("file3").setDescription("Media 3")),
 
-  new SlashCommandBuilder().setName("ticketpanel").setDescription("Ticket panel"),
+  new SlashCommandBuilder().setName("ticketpanel").setDescription("Open ticket panel"),
+
   new SlashCommandBuilder().setName("close").setDescription("Close ticket"),
 
   new SlashCommandBuilder()
-    .setName("kick")
-    .setDescription("Kick")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("ban")
-    .setDescription("Ban")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("timeout")
-    .setDescription("Timeout")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
-    .addIntegerOption(o => o.setName("time").setDescription("Minutes").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("untimeout")
-    .setDescription("Remove timeout")
-    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-
-  new SlashCommandBuilder()
     .setName("warn")
-    .setDescription("Warn")
+    .setDescription("Warn user")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
-
-  new SlashCommandBuilder().setName("warnlist").setDescription("All warns"),
 
   new SlashCommandBuilder()
     .setName("unwarn")
@@ -125,7 +107,35 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("clearwarn")
-    .setDescription("Clear warns")
+    .setDescription("Clear all warns")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("warnlist")
+    .setDescription("Show all warns"),
+
+  new SlashCommandBuilder()
+    .setName("kick")
+    .setDescription("Kick user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("ban")
+    .setDescription("Ban user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("timeout")
+    .setDescription("Timeout user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addIntegerOption(o => o.setName("duration").setDescription("Minutes").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("untimeout")
+    .setDescription("Remove timeout")
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
 
   new SlashCommandBuilder()
@@ -160,20 +170,17 @@ client.once("ready", async () => {
 // ================= INTERACTIONS =================
 client.on("interactionCreate", async (i) => {
   try {
-
     if (!i.guild) return;
 
-    if (i.isChatInputCommand()) await i.deferReply({ ephemeral: true });
+    if (i.isChatInputCommand()) {
+      await i.deferReply({ ephemeral: true });
+    }
 
-    // ================= PING =================
+    // ===== PING =====
     if (i.commandName === "ping")
       return i.editReply(`🏓 ${client.ws.ping}ms`);
 
-    // ================= SERVER =================
-    if (i.commandName === "serverinfo")
-      return i.editReply(`Members: ${i.guild.memberCount}`);
-
-    // ================= ANNOUNCE =================
+    // ===== ANNOUNCE =====
     if (i.commandName === "announce") {
       if (!isAllowed(i.member)) return i.editReply("No permission");
 
@@ -181,55 +188,19 @@ client.on("interactionCreate", async (i) => {
       const ch = i.options.getChannel("channel") || i.channel;
 
       const files = [];
-      ["file1","file2","file3"].forEach(f=>{
+      ["file1", "file2", "file3"].forEach(f => {
         const file = i.options.getAttachment(f);
-        if(file) files.push(file.url);
+        if (file) files.push(file.url);
       });
 
       await ch.send({ content: msg, files });
       return i.editReply("Sent 📤");
     }
 
-    // ================= MOD COMMANDS =================
-    if (["kick","ban","timeout","untimeout","purge","addrole","removerole","warn","unwarn","clearwarn","warnlist"].includes(i.commandName)) {
-      if (!isAllowed(i.member)) return i.editReply("No permission");
-    }
-
-    // ===== KICK =====
-    if (i.commandName === "kick") {
-      const user = i.options.getUser("user");
-      const reason = i.options.getString("reason");
-      await i.guild.members.kick(user.id, reason);
-      return i.editReply(`Kicked ${user.tag}`);
-    }
-
-    // ===== BAN =====
-    if (i.commandName === "ban") {
-      const user = i.options.getUser("user");
-      const reason = i.options.getString("reason");
-      await i.guild.members.ban(user.id, { reason });
-      return i.editReply(`Banned ${user.tag}`);
-    }
-
-    // ===== TIMEOUT =====
-    if (i.commandName === "timeout") {
-      const user = i.options.getUser("user");
-      const time = i.options.getInteger("time");
-      const member = await i.guild.members.fetch(user.id);
-      await member.timeout(time * 60000);
-      return i.editReply(`Timed out ${user.tag}`);
-    }
-
-    // ===== UNTIMEOUT =====
-    if (i.commandName === "untimeout") {
-      const user = i.options.getUser("user");
-      const member = await i.guild.members.fetch(user.id);
-      await member.timeout(null);
-      return i.editReply(`Timeout removed`);
-    }
-
     // ===== WARN =====
     if (i.commandName === "warn") {
+      if (!isAllowed(i.member)) return i.editReply("No permission");
+
       const user = i.options.getUser("user");
       const reason = i.options.getString("reason");
 
@@ -239,59 +210,52 @@ client.on("interactionCreate", async (i) => {
       data.warns.push({ reason, by: i.user.id, time: new Date() });
       await data.save();
 
-      return i.editReply(`Warned ${user.tag}`);
-    }
+      if (data.warns.length >= 3) {
+        const member = await i.guild.members.fetch(user.id);
+        await member.timeout(24 * 60 * 60 * 1000, "3 warns");
+      }
 
-    // ===== WARNLIST =====
-    if (i.commandName === "warnlist") {
-      const all = await Warn.find();
-      if (!all.length) return i.editReply("No warns");
-
-      let txt = all.map(x => `<@${x.userId}> - ${x.warns.length} warns`).join("\n");
-      return i.editReply(txt);
-    }
-
-    // ===== UNWARN =====
-    if (i.commandName === "unwarn") {
-      const user = i.options.getUser("user");
-      const data = await Warn.findOne({ userId: user.id });
-      if (!data || !data.warns.length) return i.editReply("No warns");
-
-      data.warns.pop();
-      await data.save();
-
-      return i.editReply("Removed last warn");
+      return i.editReply(`${user} warned (${data.warns.length}/3)`);
     }
 
     // ===== CLEAR WARN =====
     if (i.commandName === "clearwarn") {
+      if (!isAllowed(i.member)) return i.editReply("No permission");
+
       const user = i.options.getUser("user");
       await Warn.deleteOne({ userId: user.id });
-      return i.editReply("Cleared warns");
+
+      return i.editReply(`${user} warns cleared (0/3)`);
     }
 
-    // ===== PURGE =====
-    if (i.commandName === "purge") {
-      const amt = i.options.getInteger("amount");
-      await i.channel.bulkDelete(amt);
-      return i.editReply("Deleted");
-    }
+    // ===== UNWARN =====
+    if (i.commandName === "unwarn") {
+      if (!isAllowed(i.member)) return i.editReply("No permission");
 
-    // ===== ROLE =====
-    if (i.commandName === "addrole") {
       const user = i.options.getUser("user");
-      const role = i.options.getRole("role");
-      const member = await i.guild.members.fetch(user.id);
-      await member.roles.add(role);
-      return i.editReply("Role added");
+      const data = await Warn.findOne({ userId: user.id });
+
+      if (!data || data.warns.length === 0)
+        return i.editReply("No warns");
+
+      data.warns.pop();
+      await data.save();
+
+      return i.editReply(`${user} unwarned (${data.warns.length}/3)`);
     }
 
-    if (i.commandName === "removerole") {
-      const user = i.options.getUser("user");
-      const role = i.options.getRole("role");
-      const member = await i.guild.members.fetch(user.id);
-      await member.roles.remove(role);
-      return i.editReply("Role removed");
+    // ===== CLOSE BUTTON =====
+    if (i.isButton() && i.customId === "close_ticket") {
+      if (!isStrict(i.member)) return i.reply({ content: "No permission", ephemeral: true });
+
+      await i.deferReply({ ephemeral: true });
+
+      const file = await transcripts.createTranscript(i.channel);
+      const log = i.guild.channels.cache.get(LOG_CHANNEL);
+      if (log) log.send({ files: [file] });
+
+      await i.editReply("Closing...");
+      setTimeout(() => i.channel.delete(), 2000);
     }
 
   } catch (e) {
