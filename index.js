@@ -68,6 +68,10 @@ const commands = [
 
   new SlashCommandBuilder().setName("ping").setDescription("Ping"),
 
+  new SlashCommandBuilder()
+    .setName("rules")
+    .setDescription("View the server rules"),
+
   new SlashCommandBuilder().setName("serverinfo").setDescription("Server Info"),
 
   new SlashCommandBuilder()
@@ -169,6 +173,53 @@ client.on("interactionCreate", async (i) => {
 
     if (i.commandName === "serverinfo")
       return i.reply({ content: `Members: ${i.guild.memberCount}`, ephemeral: true });
+
+    // ===== RULES =====
+    if (i.commandName === "rules") {
+
+      const rulesEmbed = new EmbedBuilder()
+        .setColor("#5865F2")
+        .setTitle("📜 Server Rules")
+        .setDescription(`
+**1. Be Respectful**
+Treat everyone with respect. No harassment, bullying, hate speech, or threats.
+
+**2. No Spam**
+Do not spam messages, mentions, emojis, or commands.
+
+**3. No NSFW Content**
+Keep inappropriate or NSFW content out of the server.
+
+**4. No Advertising**
+Do not advertise other servers, products, or services without permission.
+
+**5. Use the Correct Channels**
+Keep conversations and content in their appropriate channels.
+
+**6. Follow Discord Rules**
+All members must follow Discord's Terms of Service and Community Guidelines.
+
+**7. Respect Staff**
+Please follow reasonable instructions from server staff.
+
+**8. No Raiding or Disruption**
+Do not intentionally disrupt, raid, exploit, or damage the server.
+
+**9. No Scams or Malicious Content**
+Do not share scams, malicious files, phishing links, or other harmful content.
+
+**10. Have Fun!**
+Keep the community friendly, welcoming, and enjoyable for everyone.
+        `)
+        .setFooter({
+          text: "Please follow the rules to keep the server safe and enjoyable."
+        })
+        .setTimestamp();
+
+      return i.reply({
+        embeds: [rulesEmbed]
+      });
+    }
 
     // ===== ANNOUNCE =====
     if (i.commandName === "announce") {
