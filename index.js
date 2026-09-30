@@ -217,8 +217,7 @@ Keep the community friendly, welcoming, and enjoyable for everyone.
         .setTimestamp();
 
       return i.reply({
-        embeds: [rulesEmbed],
-        ephemeral: true
+        embeds: [rulesEmbed]
       });
     }
 
